@@ -1,0 +1,49 @@
+{
+	"name": "file-searcher",
+	"displayName": "Fast File Picker",
+	"description": "Searching files on the fly",
+	"version": "0.0.3",
+	"publisher": "vscode-wwm-quickpick",
+	"engines": {
+		"vscode": "^1.32.0"
+	},
+	"categories": [
+		"Other"
+	],
+	"activationEvents": [
+		"*"
+	],
+	"keybindings": [
+		{
+			"command": "wwm.quickInput",
+			"key": "F11",
+			"mac": "F11"
+		}
+	],
+	"main": "./out/extension.js",
+	"contributes": {
+		"commands": [
+			{
+				"command": "wwm.quickInput",
+				"title": "wwm: Search Files"
+			},
+			{
+				"command": "wwm.buildFileList",
+				"title": "wwm: Build File List Database"
+			}
+		]
+	},
+	"scripts": {
+		"vscode:prepublish": "npm run compile",
+		"compile": "tsc -p ./",
+		"lint": "tslint -p ./",
+		"watch": "tsc -watch -p ./"
+	},
+	"devDependencies": {
+		"@types/node": "^10.3.6",
+		"@types/vscode": "^1.32.0",
+		"tslint": "^5.16.0",
+		"typescript": "^3.5.1"
+	},
+	"dependencies": {}
+}
