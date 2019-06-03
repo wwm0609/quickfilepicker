@@ -3,8 +3,8 @@
 # How to use
 Hit `CMD + Shirft + P` and input 'wwm', you'll see:
 ```
-> wwm: Search Files
-> wwm: Build File List Database
+> filepicker: Search Files (Cmd+P on mac or Ctrl+P on linux/windows)
+> filepicker: Build File List Database
 ```
 
 Build file list database, then search for files, that's it!

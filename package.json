@@ -13,23 +13,23 @@
   "activationEvents": [
     "*"
   ],
-  "keybindings": [
-    {
-      "command": "wwm.quickInput",
-      "key": "F11",
-      "mac": "F11"
-    }
-  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "wwm.quickInput",
-        "title": "wwm: Search Files"
+        "title": "filepicker: Search Files"
       },
       {
         "command": "wwm.buildFileList",
-        "title": "wwm: Build File List Database"
+        "title": "filepicker: Build File List Database"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "wwm.quickInput",
+        "key": "ctrl+p",
+        "mac": "cmd+p"
       }
     ]
   },
