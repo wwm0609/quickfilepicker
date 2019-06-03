@@ -1,7 +1,7 @@
 # Quick File Picker
 
 # How to use
-invoke `CMD + Shirft + P` and input 'wwm', you'll see:
+Hit `CMD + Shirft + P` and input 'wwm', you'll see:
 ```
 > wwm: Search Files
 > wwm: Build File List Database
@@ -10,8 +10,13 @@ invoke `CMD + Shirft + P` and input 'wwm', you'll see:
 Build file list database, then search for files, that's it!
 
 # TODO
-- watch for file add/move/delete, then update file list database accordingly
+### Category: build file list database
+- follow symbolic links
+- allow excleding certain directies or files which can be specified in the workspace configuration
+- rank search results based on how much they matched the pattern which user inputed
 
+# How To Run Locally
+Clone this project into your local disk and open it in vscode, press F5, there you go!
 
-# Contact
-visit https://github.com/wwm0609/quickfilepicker/ and file issues
+# Bugs
+Visit https://github.com/wwm0609/quickfilepicker/ and file an issue
