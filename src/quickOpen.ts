@@ -8,11 +8,13 @@ import fs = require('fs');
 import readline = require('readline');
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
 import { promisify } from 'util';
+import * as vscode from 'vscode';
+
 const readdir = promisify(fs.readdir);
 const lstat = promisify(fs.lstat);
 
 
-var QuickOpenCache = ".quick_open_file_list.db"
+export var QuickOpenFileListDatabaseFile = ".quick_open_file_list.db"
 var file_list: string[] = []
 
 
@@ -22,8 +24,8 @@ var file_list: string[] = []
  * It shows how the list of items can be dynamically updated based on
  * the user's input in the filter field.
  */
-export async function quickOpen() {
-	const uri = await pickFile();
+export async function quickOpen(recentlyOpenedFiles:string[]) {
+	const uri = await pickFile(recentlyOpenedFiles);
 	if (uri) {
 		const document = await workspace.openTextDocument(uri);
 		await window.showTextDocument(document);
@@ -111,7 +113,7 @@ async function walkFileTree(dir: string, filters: string[], onNewFile: any) {
 }
 
 function getFileListCache(workspaceDir: string) {
-	return path.join(workspaceDir, QuickOpenCache);
+	return path.join(workspaceDir, QuickOpenFileListDatabaseFile);
 }
 
 export async function buildFileListCache(workspaceFolder: string, excludeDirs: string[], onNewFile: any) {
@@ -194,9 +196,7 @@ function queryCandidates(input:QuickPick<FileItem|MessageItem>, value: string) {
 		return;
 	}
 	input.busy = true;
-	const cwds = workspace.workspaceFolders ?
-		workspace.workspaceFolders.map(f => f.uri.fsPath) : [process.cwd()];
-	var workspaceFolder = cwds[0];
+	var workspaceFolder = getWorkspaceDir();
 	var cacheFile = getFileListCache(workspaceFolder);
 	fs.lstat(cacheFile, (err) => {
 		if (err != null) {
@@ -218,35 +218,31 @@ function queryCandidates(input:QuickPick<FileItem|MessageItem>, value: string) {
 			return;
 		}
 
-		fs.readFile(cacheFile, { encoding: 'utf-8' }, function (err, data) {
-			if (!err) {
-				console.log("reading cache: " + cacheFile)
-				const readInterface = readline.createInterface({
-					input: fs.createReadStream(cacheFile),
-					output: process.stdout,
-				});
-				const lines: string[] = [];
-				readInterface.on('line', function (line: string) {
-					if (line.length > 0 && !line.startsWith('#')) {
-						lines.push(line);
-					}
-				});
-				file_list = lines;
-				prepareCandidates(input, lines, value, workspaceFolder);
-				console.timeEnd("fastfilepicker: queryCandidates");
-				input.busy = false;
-				return;
+		console.log("filepicker: load file list cache from " + cacheFile)
+		const readInterface = readline.createInterface({
+			input: fs.createReadStream(cacheFile),
+			output: process.stdout,
+		});
+		readInterface.on('line', function (line: string) {
+			if (line.length > 0 && !line.startsWith('#')) {
+				lines.push(line);
 			}
-
-			input.items = input.items.concat([
-				new MessageItem(Uri.file(cacheFile), "file list database broken, please rebuild it")
-			])
-			file_list = [];
-			console.log("failed to loading cached file list", err);
-			input.busy = false;
+		});
+		readInterface.on('close', () => {
+			console.log("filepicker: file list cacahe loaded");
+			file_list = lines;
+			prepareCandidates(input, lines, value, workspaceFolder);
 			console.timeEnd("fastfilepicker: queryCandidates");
+			input.busy = false;
 		});
 	});
+}
+
+function getWorkspaceDir() {
+	const cwds = vscode.workspace.workspaceFolders ?
+		vscode.workspace.workspaceFolders.map(f => f.uri.fsPath) : [process.cwd()];
+	var workspaceFolder = cwds[0];
+	return workspaceFolder;
 }
 
 function prepareCandidates(input: QuickPick<FileItem|MessageItem>, lines: string[], value: string, workspaceFolder: string) {
@@ -257,13 +253,15 @@ function prepareCandidates(input: QuickPick<FileItem|MessageItem>, lines: string
 	console.timeEnd("fastfilepicker: prepareCandidates");
 }
 
-async function pickFile() {
+async function pickFile(recentlyOpenedFiles:string[]) {
 	const disposables: Disposable[] = [];
 	try {
 		return await new Promise<Uri | undefined>((resolve, reject) => {
 			const input = window.createQuickPick<FileItem | MessageItem>();
 			const timeoutObjs: any[] = []
-			input.placeholder = 'Type to search for files';
+			input.placeholder = 'FilePicker: type to search for files';
+			var workspaceFolder = getWorkspaceDir();
+			input.items = input.items.concat(recentlyOpenedFiles.map((relative_path) => new FileItem(Uri.file(workspaceFolder), Uri.file(path.join(workspaceFolder, relative_path)))));
 			disposables.push(
 				input.onDidChangeValue(key => {
 					if (timeoutObjs.length > 0) {
