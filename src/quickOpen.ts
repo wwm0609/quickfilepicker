@@ -5,11 +5,15 @@
 
 import * as path from 'path';
 import fs = require('fs');
+import readline = require('readline');
+import walk = require('walk');
 import { Uri, window, Disposable, QuickPickItem, workspace } from 'vscode';
+import { promisify } from 'util';
+const readdir = promisify(fs.readdir);
+const lstat = promisify(fs.lstat);
 
 
-var WorkspaceConfigFolderName = '.vscode'
-var QuickOpenCache = "quickOpenFileListCache"
+var QuickOpenCache = ".quick_open_file_list.db"
 var file_list: string[] = []
 
 
@@ -28,59 +32,150 @@ export async function quickOpen() {
 }
 
 
-function walkDir(dir: string, callback: { (abs_path: string): void; (arg0: string): void; }) {
-	fs.readdirSync(dir).forEach(f => {
-		let dirPath = path.join(dir, f);
-		let stats = fs.lstatSync(dirPath);
-		if (stats.isDirectory() && !f.startsWith(".") && f != '.repo' && f != '.git') {
-			walkDir(dirPath, callback);
-		} else if (stats.isFile() || stats.isSymbolicLink() && !f.startsWith(".")) {
-			callback(path.join(dir, f))
+// slow implementation
+export function walkDir({ dir, filters, callback }: { dir: string; filters: string[]; callback: any; }) {
+	var walker;
+	var options = {
+		followLinks: true,
+		// directories with these keys will be skipped
+		filters: ["Temp", "_Temp", ".git"].concat(filters)
+	};
+	walker = walk.walk(dir, options);
+	walker.on("file", function (root, fileStats, next) {
+		const dirname = path.basename(root);
+		const filename = fileStats.name;
+		if (dirname.substr(0, 1) != '.'
+			&& filename.substr(0, 1) != '.'
+			&& !fileStats.isDirectory()) {
+			const abs_path = path.join(root, filename);
+			callback(false/*not end*/, abs_path);
 		}
+		next();
+	});
+	walker.on("end", function () {
+		callback(true, '');
 	});
 };
 
-function getConfigFolder(workspaceDir: string) {
-	return path.join(workspaceDir, WorkspaceConfigFolderName);
+function shouldSkipFolder(dir: string/*abs path*/, name: string, filters: string[] /*abs path*/) {
+	return filters.indexOf(dir) >= 0 || name.charAt(0) == '.';
+}
+
+function shouldSkipFile(name: string, filters: string[] /*abs path*/) {
+	return name.charAt(0) == '.';
+}
+
+// grab all files under param dir recusively
+// if the callback param is provided, return an empty list
+export function getFilesSync(dir: string, filters: string[], onNewFile: any) {
+	const folders: string[] = [];
+	folders.push(dir);
+	const results = [];
+
+	while (folders.length > 0) {
+		let head = folders.shift(); // remove the head
+		let dir: string = ""
+		if (typeof head === 'string') {
+			dir = head
+		} else {
+			continue;
+		}
+		try {
+			const files = fs.readdirSync(dir);
+			for (var name of files) {
+				var abs_file = path.join(dir, name);
+				let fileStat: fs.Stats;
+				try {
+					fileStat = fs.lstatSync(abs_file)
+				} catch (e) {
+					console.log(e);
+					continue;
+				}
+				if (fileStat.isDirectory()) {
+					if (!shouldSkipFolder(dir, name, filters)) {
+						folders.push(abs_file)
+					}
+				} else if (fileStat.isFile()) {
+					if (!shouldSkipFile(name, [])) {
+						if (onNewFile != null) {
+							onNewFile(abs_file);
+						} else {
+							results.push(abs_file);
+						}
+					}
+				} else if (fileStat.isSymbolicLink()) {
+					// TODO: check if it points to a file or dir
+					continue;
+				}
+			}
+		} catch (e) {
+			console.log(e);
+		}
+	}
+	return results;
+}
+
+async function walkFileTree(dir: string, filters: string[], onNewFile: any) {
+	const subdirs = await readdir(dir);
+	await Promise.all(subdirs.map(async (name: string) => {
+		const abs_file = path.join(dir, name);
+		var fileStat = await lstat(abs_file);
+		if (fileStat.isDirectory()) {
+			return !shouldSkipFolder(abs_file, name, filters) ? walkFileTree(abs_file, filters, onNewFile) : "";
+		}
+		if (fileStat.isFile()) {
+			if (!shouldSkipFile(name, [])) {
+				onNewFile(abs_file);
+			}
+		} else if (fileStat.isSymbolicLink()) {
+			// TODO: follow link?
+		}
+		return ""
+	}));
+	return "";
 }
 
 function getFileListCache(workspaceDir: string) {
-	return path.join(getConfigFolder(workspaceDir), QuickOpenCache);
+	return path.join(workspaceDir, QuickOpenCache);
 }
 
-export async function buildFileListCache() {
-	const cwds = workspace.workspaceFolders ?
-		workspace.workspaceFolders.map(f => f.uri.fsPath) : [process.cwd()];
-	var walkspaceFolder = cwds[0];
-	var project_config_folder = getConfigFolder(walkspaceFolder);
-	try {
-		if (!fs.existsSync(project_config_folder)) {
-			console.log("dir not exist, creating now: " + project_config_folder);
-			fs.mkdirSync(project_config_folder);
-		}
-		var tmp_file_list: string[] = []
-		var cacheFile = getFileListCache(walkspaceFolder);
-		var tmpCacheFile = cacheFile + ".new";
-		var stream = fs.createWriteStream(tmpCacheFile);
-		console.time("buildFileListCache");
-		console.log("begin build file list: " + walkspaceFolder);
-		await walkDir(walkspaceFolder, function (abs_path: string) {
-			// use relative path
-			// var relativePath = abs_path.replace(walkspaceFolder, ".")
-			// console.log("found: " + relativePath);
-			tmp_file_list.push(abs_path);
-			// stream.write(relativePath + "\n");
-			stream.write(abs_path + "\n");
+export async function buildFileListCache(workspaceFolder: string, excludeDirs: string[], excludeFilePatterns: string[]) {
+	console.time("buildFileListCache");
+	console.log("begin build file list: " + workspaceFolder + ", exclude dirs=" + excludeDirs);
+	const tmp_file_list: string[] = []
+	const cacheFile = getFileListCache(workspaceFolder);
+	const tmpCacheFile = cacheFile + ".new";
+	const stream = fs.createWriteStream(tmpCacheFile);
+	stream.write("# This is database file auto generated by quick file picker, please don't modify it directly\n# You better add it into your project's .gitignore file")
+	let promise = new Promise((resolve, reject) => {
+		walkFileTree(workspaceFolder, excludeDirs, (abs_path: string) => {
+			var file = abs_path.replace(workspaceFolder, ".");
+			console.log("found: " + file);
+			tmp_file_list.push(file);
+			stream.write(file + "\n");
+		}).then(() => {
+			stream.end();
+			file_list = tmp_file_list;
+			fs.rename(tmpCacheFile, cacheFile, () => resolve("done"))
 		});
-		file_list = tmp_file_list;
-		stream.end();
-		fs.renameSync(tmpCacheFile, cacheFile)
-		console.log("summary: found " + tmp_file_list.length + " files");
-		console.log("wrote cache file list into " + cacheFile);
-		console.timeEnd("buildFileListCache");
-	} catch (err) {
-		console.error(err)
-	}
+		// walkDir({
+		// 	dir: workspaceFolder, filters: excludeDirs, callback: function (ended: boolean, file: string) {
+		// 		// use relative path
+		// 		var file = file.replace(workspaceFolder, ".");
+		// 		console.log("found: " + file);
+		// 		tmp_file_list.push(file);
+		// 		stream.write(file + "\n");
+		// 		if (ended) {
+		// 			resolve("done");
+		// 		}
+		// 	}
+		// });
+	});
+	await promise;
+	console.log("summary: found " + tmp_file_list.length + " files");
+	console.log("wrote cache file list into " + cacheFile);
+	console.timeEnd("buildFileListCache");
+	return cacheFile;
 }
 
 class FileItem implements QuickPickItem {
@@ -160,7 +255,16 @@ function queryCandidates(input: any, value: string) {
 		fs.readFile(cacheFile, { encoding: 'utf-8' }, function (err, data) {
 			if (!err) {
 				console.log("reading cache: " + cacheFile)
-				var lines = data.split(/\r?\n/)
+				const readInterface = readline.createInterface({
+					input: fs.createReadStream(cacheFile),
+					output: process.stdout,
+				});
+				const lines: string[] = [];
+				readInterface.on('line', function (line: string) {
+					if (line.length > 0 && !line.startsWith('#')) {
+						lines.push(line);
+					}
+				});
 				file_list = lines;
 				prepareCandidates(input, lines, value, workspaceFolder);
 				input.busy = false;
@@ -180,7 +284,7 @@ function queryCandidates(input: any, value: string) {
 function prepareCandidates(input: any, lines: string[], value: string, workspaceFolder: string) {
 	input.items = input.items.concat(lines.filter(function (element) {
 		return isPatternMatch(value, element);
-	}).map(abs_path => new FileItem(Uri.file(workspaceFolder), Uri.file(abs_path))));
+	}).map(file => new FileItem(Uri.file(workspaceFolder), Uri.file(path.join(workspaceFolder, file)))));
 }
 
 async function pickFile() {
@@ -219,166 +323,3 @@ async function pickFile() {
 		disposables.forEach(d => d.dispose());
 	}
 }
-
-
-// // the ranking algorithm needs tweak
-// function prepareAndRankCandidates(lines: string[], value: string, workspaceFolder: string, input: any) {
-// 	interface Item {
-// 		path: string;
-// 		value: number;
-// 	}
-// 	;
-// 	lines = lines.filter(function (element) {
-// 		return isPatternMatch(value, element);
-// 	});
-// 	var items: Item[] = [];
-// 	for (let f of lines) {
-// 		let relativePath = f.replace(workspaceFolder, "");
-// 		let result = fuzzy_match(value, relativePath);
-// 		let matched: boolean = result[0];
-// 		let score: number = result[1];
-// 		if (matched && score >= -80) {
-// 			let item: Item = { path: f, value: score };
-// 			items.push(item);
-// 		}
-// 	}
-// 	items = items.sort((l, r) => r.value - l.value);
-// 	input.items = input.items.concat(items
-// 		.map(item => new FileItem(Uri.file(workspaceFolder), Uri.file(item.path))));
-// }
-
-// // Returns [bool, score, formattedStr]
-// // bool: true if each character in pattern is found sequentially within str
-// // score: integer; higher is better match. Value has no intrinsic meaning. Range varies with pattern. 
-// //        Can only compare scores with same search pattern.
-// // formattedStr: input str with matched characters marked in <b> tags. Delete if unwanted.
-// function fuzzy_match(pattern: string, str: string): any[] {
-
-// 	// Score consts
-// 	let adjacency_bonus: number = 5;                // bonus for adjacent matches
-// 	let separator_bonus: number = 10;               // bonus if match occurs after a separator
-// 	var camel_bonus = 10;                   // bonus if match is uppercase and prev is lower
-// 	var leading_letter_penalty = -3;        // penalty applied for every letter in str before the first match
-// 	var max_leading_letter_penalty = -9;    // maximum penalty for leading letters
-// 	var unmatched_letter_penalty = -1;      // penalty for every letter that doesn't matter
-
-// 	// Loop variables
-// 	let score: number = 0;
-// 	var patternIdx = 0;
-// 	var patternLength = pattern.length;
-// 	var strIdx = 0;
-// 	var strLength = str.length;
-// 	var prevMatched = false;
-// 	var prevLower = false;
-// 	var prevSeparator = true;       // true so if first letter match gets separator bonus
-
-// 	// Use "best" matched letter if multiple string letters match the pattern
-// 	var bestLetter = null;
-// 	var bestLower = null;
-// 	var bestLetterIdx = -1;
-// 	var bestLetterScore = 0;
-
-// 	let matchedIndices: number[] = [];
-// 	let formattedStr: string = "";
-
-// 	// Loop over strings
-// 	while (strIdx != strLength) {
-// 		formattedStr = "";
-// 		var patternChar = patternIdx != patternLength ? pattern.charAt(patternIdx) : null;
-// 		var strChar = str.charAt(strIdx);
-// 		var idx = 0;
-// 		var patternLower = patternChar != null ? patternChar.toLowerCase() : null;
-// 		var strLower = strChar.toLowerCase();
-// 		var strUpper = strChar.toUpperCase();
-
-// 		var nextMatch = patternChar && patternLower == strLower;
-// 		var rematch = bestLetter && bestLower == strLower;
-
-// 		var advanced = nextMatch && bestLetter;
-// 		var patternRepeat = bestLetter && patternChar && bestLower == patternLower;
-// 		if (advanced || patternRepeat) {
-// 			score += bestLetterScore;
-// 			matchedIndices.push(bestLetterIdx);
-// 			bestLetter = null;
-// 			bestLower = null;
-// 			bestLetterIdx = -1;
-// 			bestLetterScore = 0;
-// 		}
-
-// 		if (nextMatch || rematch) {
-// 			var newScore = 0;
-
-// 			// Apply penalty for each letter before the first pattern match
-// 			// Note: std::max because penalties are negative values. So max is smallest penalty.
-// 			if (patternIdx == 0) {
-// 				var penalty = Math.max(strIdx * leading_letter_penalty, max_leading_letter_penalty);
-// 				score += penalty;
-// 			}
-
-// 			// Apply bonus for consecutive bonuses
-// 			if (prevMatched)
-// 				newScore += adjacency_bonus;
-
-// 			// Apply bonus for matches after a separator
-// 			if (prevSeparator)
-// 				newScore += separator_bonus;
-
-// 			// Apply bonus across camel case boundaries. Includes "clever" isLetter check.
-// 			if (prevLower && strChar == strUpper && strLower != strUpper)
-// 				newScore += camel_bonus;
-
-// 			// Update patter index IFF the next pattern letter was matched
-// 			if (nextMatch)
-// 				++patternIdx;
-
-// 			// Update best letter in str which may be for a "next" letter or a "rematch"
-// 			if (newScore >= bestLetterScore) {
-
-// 				// Apply penalty for now skipped letter
-// 				if (bestLetter != null)
-// 					score += unmatched_letter_penalty;
-
-// 				bestLetter = strChar;
-// 				bestLower = bestLetter.toLowerCase();
-// 				bestLetterIdx = strIdx;
-// 				bestLetterScore = newScore;
-// 			}
-
-// 			prevMatched = true;
-// 		}
-// 		else {
-// 			// Append unmatch characters
-// 			formattedStr += strChar;
-
-// 			score += unmatched_letter_penalty;
-// 			prevMatched = false;
-// 		}
-
-// 		// Includes "clever" isLetter check.
-// 		prevLower = strChar == strLower && strLower != strUpper;
-// 		prevSeparator = strChar == '_' || strChar == ' ';
-
-// 		++strIdx;
-// 	}
-
-// 	// Apply score for last match
-// 	if (bestLetter) {
-// 		score += bestLetterScore;
-// 		matchedIndices.push(bestLetterIdx);
-// 	}
-
-// 	// Finish out formatted string after last pattern matched
-// 	// Build formated string based on matched letters
-
-// 	var lastIdx = 0;
-// 	for (var i = 0; i < matchedIndices.length; ++i) {
-// 		var idx = matchedIndices[i];
-// 		formattedStr += str.substr(lastIdx, idx - lastIdx) + "<b>" + str.charAt(idx) + "</b>";
-// 		lastIdx = idx + 1;
-// 	}
-// 	formattedStr += str.substr(lastIdx, str.length - lastIdx);
-
-// 	let matched: boolean = patternIdx == patternLength;
-// 	return [matched, score, formattedStr];
-// }
-

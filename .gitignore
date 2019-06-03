@@ -3,8 +3,7 @@ npm-debug.log
 Thumbs.db
 */node_modules/
 */out/
-*/.vscode/
-.vscode/**
+.vscode/quickOpenFileListCache
 .node_modules/**
 out
 node_modules

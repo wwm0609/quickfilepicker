@@ -4,31 +4,36 @@
  *--------------------------------------------------------------------------------------------*/
 
 
-import { commands, ExtensionContext } from 'vscode';
-import { quickOpen } from './quickOpen';
-import { buildFileListCache } from './quickOpen';
+import { quickOpen, buildFileListCache } from './quickOpen';
+import { commands, ExtensionContext, workspace } from 'vscode';
 import * as vscode from 'vscode';
+import * as path from 'path';
+
+let myStatusBarItem: vscode.StatusBarItem;
+myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 
 export function activate(context: ExtensionContext) {
-	console.log("QuickPick: activated");
+	const cwds = workspace.workspaceFolders ?
+		workspace.workspaceFolders.map(f => f.uri.fsPath) : [process.cwd()];
+	const workspaceDir = cwds[0];
+	console.log("FastFilePicker: activated for " + workspaceDir);
 	context.subscriptions.push(commands.registerCommand('wwm.quickInput', async () => {
+		console.log("damn vscode2");
 		quickOpen();
 	}));
 	context.subscriptions.push(commands.registerCommand('wwm.buildFileList', async () => {
-		let myStatusBarItem: vscode.StatusBarItem;
-		myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-		showStatus(myStatusBarItem);
-		buildFileListCache();
-		vscode.window.showInformationMessage('file list database constructed!');
-		hideStatus(myStatusBarItem);
+		console.log("damn vscode1");
+		myStatusBarItem.text = `filepicker: indexing...`;
+		myStatusBarItem.show();
+		// const configuration = vscode.workspace.getConfiguration();
+		// const currentValue = configuration.get('conf.resource.insertEmptyLastLine');
+		// todo: read exclude dirs from configuration
+		var excludeDirs = ["out", 'test', 'vendor', 'cts', 'tools', 'src/tools', ".repo", "node_modules"]
+			.map(folder => path.join(workspaceDir, folder));
+		var excludeFilePatterns:string[] = []
+		buildFileListCache(workspaceDir, excludeDirs, excludeFilePatterns).then(database => {
+			myStatusBarItem.hide();
+			vscode.window.showInformationMessage("fast picker: indexing finished, see " + database);
+		});
 	}));
-}
-
-function showStatus(myStatusBarItem: vscode.StatusBarItem) {
-	myStatusBarItem.text = `building file list cache...`;
-	myStatusBarItem.show();
-}
-
-function hideStatus(myStatusBarItem: vscode.StatusBarItem) {
-	myStatusBarItem.hide()
 }
