@@ -10,6 +10,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 
 let myStatusBarItem: vscode.StatusBarItem;
+let isBuildingFileList:boolean = false;
 myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 
 export function activate(context: ExtensionContext) {
@@ -22,6 +23,11 @@ export function activate(context: ExtensionContext) {
 		quickOpen();
 	}));
 	context.subscriptions.push(commands.registerCommand('wwm.buildFileList', async () => {
+		if (isBuildingFileList) {
+			vscode.window.showInformationMessage("fast picker: busy now, please try later");
+			return;
+		}
+		isBuildingFileList = true;
 		console.log("damn vscode1");
 		myStatusBarItem.text = `filepicker: indexing...`;
 		myStatusBarItem.show();
@@ -30,10 +36,21 @@ export function activate(context: ExtensionContext) {
 		// todo: read exclude dirs from configuration
 		var excludeDirs = ["out", 'test', 'vendor', 'cts', 'tools', 'src/tools', ".repo", "node_modules"]
 			.map(folder => path.join(workspaceDir, folder));
-		var excludeFilePatterns:string[] = []
-		buildFileListCache(workspaceDir, excludeDirs, excludeFilePatterns).then(database => {
+		// var excludeFilePatterns:string[] = []
+		var count = 0;
+		const intervalObj = setInterval(function() {
+			myStatusBarItem.text = `filepicker: ` + count
+		}, 100)
+		buildFileListCache(workspaceDir, excludeDirs, () => {
+			++count
+		}).then(database => {
+			isBuildingFileList = false;
+			clearInterval(intervalObj);
 			myStatusBarItem.hide();
 			vscode.window.showInformationMessage("fast picker: indexing finished, see " + database);
+		}).catch((err) => {
+			isBuildingFileList = false;
+			console.log("failed to build file list database", err);
 		});
 	}));
 }

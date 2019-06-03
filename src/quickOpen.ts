@@ -6,8 +6,7 @@
 import * as path from 'path';
 import fs = require('fs');
 import readline = require('readline');
-import walk = require('walk');
-import { Uri, window, Disposable, QuickPickItem, workspace } from 'vscode';
+import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
 import { promisify } from 'util';
 const readdir = promisify(fs.readdir);
 const lstat = promisify(fs.lstat);
@@ -30,32 +29,6 @@ export async function quickOpen() {
 		await window.showTextDocument(document);
 	}
 }
-
-
-// slow implementation
-export function walkDir({ dir, filters, callback }: { dir: string; filters: string[]; callback: any; }) {
-	var walker;
-	var options = {
-		followLinks: true,
-		// directories with these keys will be skipped
-		filters: ["Temp", "_Temp", ".git"].concat(filters)
-	};
-	walker = walk.walk(dir, options);
-	walker.on("file", function (root, fileStats, next) {
-		const dirname = path.basename(root);
-		const filename = fileStats.name;
-		if (dirname.substr(0, 1) != '.'
-			&& filename.substr(0, 1) != '.'
-			&& !fileStats.isDirectory()) {
-			const abs_path = path.join(root, filename);
-			callback(false/*not end*/, abs_path);
-		}
-		next();
-	});
-	walker.on("end", function () {
-		callback(true, '');
-	});
-};
 
 function shouldSkipFolder(dir: string/*abs path*/, name: string, filters: string[] /*abs path*/) {
 	return filters.indexOf(dir) >= 0 || name.charAt(0) == '.';
@@ -94,6 +67,8 @@ export function getFilesSync(dir: string, filters: string[], onNewFile: any) {
 				if (fileStat.isDirectory()) {
 					if (!shouldSkipFolder(dir, name, filters)) {
 						folders.push(abs_file)
+					} else {
+						console.log("quick file picker: skip scanning folder " + abs_file)
 					}
 				} else if (fileStat.isFile()) {
 					if (!shouldSkipFile(name, [])) {
@@ -139,7 +114,7 @@ function getFileListCache(workspaceDir: string) {
 	return path.join(workspaceDir, QuickOpenCache);
 }
 
-export async function buildFileListCache(workspaceFolder: string, excludeDirs: string[], excludeFilePatterns: string[]) {
+export async function buildFileListCache(workspaceFolder: string, excludeDirs: string[], onNewFile: any) {
 	console.time("buildFileListCache");
 	console.log("begin build file list: " + workspaceFolder + ", exclude dirs=" + excludeDirs);
 	const tmp_file_list: string[] = []
@@ -150,7 +125,8 @@ export async function buildFileListCache(workspaceFolder: string, excludeDirs: s
 	let promise = new Promise((resolve, reject) => {
 		walkFileTree(workspaceFolder, excludeDirs, (abs_path: string) => {
 			var file = abs_path.replace(workspaceFolder, ".");
-			console.log("found: " + file);
+			// console.log("found: " + file);
+			onNewFile(file);
 			tmp_file_list.push(file);
 			stream.write(file + "\n");
 		}).then(() => {
@@ -158,18 +134,6 @@ export async function buildFileListCache(workspaceFolder: string, excludeDirs: s
 			file_list = tmp_file_list;
 			fs.rename(tmpCacheFile, cacheFile, () => resolve("done"))
 		});
-		// walkDir({
-		// 	dir: workspaceFolder, filters: excludeDirs, callback: function (ended: boolean, file: string) {
-		// 		// use relative path
-		// 		var file = file.replace(workspaceFolder, ".");
-		// 		console.log("found: " + file);
-		// 		tmp_file_list.push(file);
-		// 		stream.write(file + "\n");
-		// 		if (ended) {
-		// 			resolve("done");
-		// 		}
-		// 	}
-		// });
 	});
 	await promise;
 	console.log("summary: found " + tmp_file_list.length + " files");
@@ -223,7 +187,7 @@ function fuzzy_match_simple(pattern: string, str: string) {
 	return patternLength != 0 && strLength != 0 && patternIdx == patternLength ? true : false;
 }
 
-function queryCandidates(input: any, value: string) {
+function queryCandidates(input:QuickPick<FileItem|MessageItem>, value: string) {
 	console.log("queryCandidates: pattern=" + value);
 	input.items = [];
 	if (!value) {
@@ -234,7 +198,7 @@ function queryCandidates(input: any, value: string) {
 		workspace.workspaceFolders.map(f => f.uri.fsPath) : [process.cwd()];
 	var workspaceFolder = cwds[0];
 	var cacheFile = getFileListCache(workspaceFolder);
-	fs.stat(cacheFile, (err) => {
+	fs.lstat(cacheFile, (err) => {
 		if (err != null) {
 			input.items = input.items.concat([
 				new MessageItem(Uri.file(cacheFile), "file list database not exist, please build it")
@@ -244,11 +208,13 @@ function queryCandidates(input: any, value: string) {
 			return;
 		}
 
+		console.time("fastfilepicker: queryCandidates");
 		var lines = file_list;
 		// we already read the cache
 		if (lines.length > 0) {
 			prepareCandidates(input, lines, value, workspaceFolder);
 			input.busy = false;
+			console.timeEnd("fastfilepicker: queryCandidates");
 			return;
 		}
 
@@ -267,6 +233,7 @@ function queryCandidates(input: any, value: string) {
 				});
 				file_list = lines;
 				prepareCandidates(input, lines, value, workspaceFolder);
+				console.timeEnd("fastfilepicker: queryCandidates");
 				input.busy = false;
 				return;
 			}
@@ -277,14 +244,17 @@ function queryCandidates(input: any, value: string) {
 			file_list = [];
 			console.log("failed to loading cached file list", err);
 			input.busy = false;
+			console.timeEnd("fastfilepicker: queryCandidates");
 		});
 	});
 }
 
-function prepareCandidates(input: any, lines: string[], value: string, workspaceFolder: string) {
+function prepareCandidates(input: QuickPick<FileItem|MessageItem>, lines: string[], value: string, workspaceFolder: string) {
+	console.time("fastfilepicker: prepareCandidates");
 	input.items = input.items.concat(lines.filter(function (element) {
 		return isPatternMatch(value, element);
 	}).map(file => new FileItem(Uri.file(workspaceFolder), Uri.file(path.join(workspaceFolder, file)))));
+	console.timeEnd("fastfilepicker: prepareCandidates");
 }
 
 async function pickFile() {
