@@ -167,7 +167,7 @@ class MessageItem implements QuickPickItem {
 function isPatternMatch(pattern: string, file: string) {
 	var matched = file.toLowerCase().includes(pattern.toLocaleLowerCase());
 	// console.log("isPatternMatch: matched=" + matched + ", key=" + pattern + ", file=" + file);
-	return matched || fuzzy_match_simple(pattern, file);
+	return matched || fuzzy_match_simple(pattern, path.basename(file));
 }
 
 function fuzzy_match_simple(pattern: string, str: string) {
