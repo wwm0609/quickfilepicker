@@ -23,6 +23,12 @@
       {
         "command": "wwm.buildFileList",
         "title": "filepicker: Build File List Database"
+      },{
+        "command": "wwm.cancelExcludeDir",
+        "title": "filepicker: cancel exclude dirs"
+      },{
+        "command": "wwm.excludeDir",
+        "title": "filepicker: exclude dirs"
       }
     ],
     "keybindings": [
@@ -31,7 +37,29 @@
         "key": "ctrl+p",
         "mac": "cmd+p"
       }
-    ]
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "filepicker configurations",
+      "properties": {
+          "filepicker.excludeDirs": {
+              "type": "string",
+              "default": "",
+              "description": "Specifies the folders that you don't want to be indexed, multiple dirs are sepearted by \":\" letter, e.g. ${workspace}/out:${workspace}/build:/mnt/aosp/cts/:.git, fyi, ${workspace} will be replaced with the path of the opened workspace. By default, all hidden files and folder will be skipped, you can manually add a directory into indexing by `right click` in the explorer sidebar and click 'filepicker: add into indexing'"
+          }
+      }
+    },
+    "menus": {
+      "explorer/context": [{
+          "when": "explorerResourceIsFolder",
+          "command": "wwm.cancelExcludeDir",
+          "group": "filepicker"
+      },{
+        "when": "explorerResourceIsFolder",
+        "command": "wwm.excludeDir",
+        "group": "filepicker"
+    }]
+  }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
