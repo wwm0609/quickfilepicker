@@ -29,14 +29,13 @@ class FileItem implements QuickPickItem {
 }
 
 class MessageItem implements QuickPickItem {
-
 	label: string;
-	description = '';
-	detail: string;
+	description: string;
+	alwaysShow = true;
 
-	constructor(public base: Uri, public message: string) {
-		this.label = message.replace(/\r?\n/g, ' ');
-		this.detail = base.fsPath;
+	constructor(title: string, message: string) {
+		this.label = title;
+		this.description = message;
 	}
 }
 
@@ -53,26 +52,29 @@ async function queryCandidates(input: QuickPick<FileItem | MessageItem>, value: 
 	}
 	input.busy = true;
 	console.time("filepicker: queryCandidates");
-	console.time("filepicker: getFileList");
+	console.time("filepicker#getFileList");
 	var lines = await getFileList();
-	console.timeEnd("filepicker: getFileList");
-	var result = prepareCandidates(input, lines, value);
+	console.timeEnd("filepicker#getFileList");
+	prepareCandidates(input, lines, value);
 	input.busy = false;
 	console.timeEnd("filepicker: queryCandidates");
-	return result;
 }
 
+// todo: support showing icons of different file types
 function prepareCandidates(input: QuickPick<FileItem | MessageItem>, lines: string[], value: string) {
-	console.time("filepicker: prepareCandidates");
+	console.time("filepicker: #prepareCandidates");
+	var workspaceFolder = getWorkspaceDir();
 	if (lines.length == 0) {
-		console.timeEnd("filepicker: #queryCandidates, no available cache, please built it first");
+		input.items = input.items.concat([
+			new MessageItem("Did you forget building database?", "please run comand `FilePicker: Build Search Database`")
+		]);
+		console.log("filepicker: no available cache, perhaps you forgot to build it?");
 	} else {
-		var workspaceFolder = getWorkspaceDir();
 		input.items = input.items.concat(lines.filter(function (element) {
 			return isPatternMatch(value, element);
 		}).map(file => new FileItem(Uri.file(workspaceFolder), Uri.file(path.join(workspaceFolder, file)))));
 	}
-	console.timeEnd("filepicker: prepareCandidates");
+	console.timeEnd("filepicker: #prepareCandidates");
 }
 
 async function pickFile(recentlyOpenedFiles: string[]) {
@@ -81,9 +83,9 @@ async function pickFile(recentlyOpenedFiles: string[]) {
 		return await new Promise<Uri | undefined>((resolve, reject) => {
 			const input = window.createQuickPick<FileItem | MessageItem>();
 			const timeoutObjs: any[] = []
-			input.placeholder = 'filepicker: type to search for files';
+			input.placeholder = 'FilePicker: Type To Search For Files';
 			var workspaceFolder = getWorkspaceDir();
-			input.items = input.items.concat(recentlyOpenedFiles.map((relative_path) => new FileItem(Uri.file(workspaceFolder), Uri.file(path.join(workspaceFolder, relative_path)))));
+			input.items = [...recentlyOpenedFiles.map((relative_path) => new FileItem(Uri.file(workspaceFolder), Uri.file(path.join(workspaceFolder, relative_path))))];
 			disposables.push(
 				input.onDidChangeValue(key => {
 					if (timeoutObjs.length > 0) {

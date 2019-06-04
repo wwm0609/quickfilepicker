@@ -36,19 +36,23 @@ export function activate(context: ExtensionContext) {
 		myStatusBarItem.hide();
 		vscode.window.showInformationMessage("fastpicker: indexing finished, see " + database);
 	}));
-	context.subscriptions.push(commands.registerCommand('wwm.cancelExcludeDir', async (args:any[]) => {
-		cancelExcludeDirs([]);
+	context.subscriptions.push(commands.registerCommand('wwm.cancelExcludeDir',
+			async (mainUri?: vscode.Uri, allUris?: vscode.Uri[]) => {
+		cancelExcludeDirs(mapUri(allUris, mainUri));
 	}));
-	context.subscriptions.push(commands.registerCommand('wwm.excludeDir', async (args?: vscode.Uri[]) => {
-		if (!args) {
-			return;
-		}
-		// var path = ''
-		// if (typeof(args) == 'object' && args["scheme"] == "file"]) {
-		// 	path = args["fspath"];
-		// 	addExcludeDirs([path]);
-		// } else {
-		// 	console.log("filepicker: unexpected param ", args);
-		// }
+	context.subscriptions.push(commands.registerCommand('wwm.excludeDir',
+		async (mainUri?: vscode.Uri, allUris?: vscode.Uri[]) => {
+		addExcludeDirs(mapUri(allUris, mainUri));
 	}));
 }
+
+function mapUri(allUris: vscode.Uri[] | undefined, mainUri: vscode.Uri | undefined) {
+	var dirs: string[] = [];
+	for (const uri of Array.isArray(allUris) ? allUris : [mainUri]) {
+		if (uri instanceof vscode.Uri) {
+			dirs.push(uri.fsPath);
+		}
+	}
+	return dirs;
+}
+

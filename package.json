@@ -18,17 +18,17 @@
     "commands": [
       {
         "command": "wwm.quickInput",
-        "title": "filepicker: Search Files"
+        "title": "FilePicker: Search Files"
       },
       {
         "command": "wwm.buildFileList",
-        "title": "filepicker: Build File List Database"
+        "title": "FilePicker: Build Search Database"
       },{
         "command": "wwm.cancelExcludeDir",
-        "title": "filepicker: cancel exclude dirs"
+        "title": "FilePicker: cancel exclude dirs"
       },{
         "command": "wwm.excludeDir",
-        "title": "filepicker: exclude dirs"
+        "title": "FilePicker: exclude dirs"
       }
     ],
     "keybindings": [
@@ -40,12 +40,13 @@
     ],
     "configuration": {
       "type": "object",
-      "title": "filepicker configurations",
+      "title": "FilePicker",
       "properties": {
           "filepicker.excludeDirs": {
               "type": "string",
               "default": "",
-              "description": "Specifies the folders that you don't want to be indexed, multiple dirs are sepearted by \":\" letter, e.g. ${workspace}/out:${workspace}/build:/mnt/aosp/cts/:.git, fyi, ${workspace} will be replaced with the path of the opened workspace. By default, all hidden files and folder will be skipped, you can manually add a directory into indexing by `right click` in the explorer sidebar and click 'filepicker: add into indexing'"
+
+              "description": "Specifies the folders that you don't want to be indexed, multiple dirs are sepearted by ':' letter, e.g. ${workspace}/out:${workspace}/build:/mnt/aosp/cts/:.git; FYI, ${workspace} will be replaced with the path of the opened workspace. By default, all hidden files and folder will be skipped, you can manually add a directory into exclude list by right-click on folers in the file explorer sidebar, then click 'filepicker: exclude dirs'"
           }
       }
     },

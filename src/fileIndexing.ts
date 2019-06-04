@@ -54,6 +54,119 @@ function getFileListCache(workspaceDir: string) {
     return path.join(workspaceDir, QuickOpenFileListDatabaseFile);
 }
 
+const property_key_exclude_dirs = "excludeDirs";
+
+export async function addExcludeDirs(newExcludeDirs: string[]) {
+    if (cancelExcludeDirs.length == 0) return;
+
+    const currentExcludeDirs = loadExcludedDirs();
+    const workspaceDir = getWorkspaceDir();
+    // sort the array, make top level directies appear in the front of the array,
+    // thus if a top level dir was added into excluded dirs, no  sub-directies of it
+    // would be appened to the exclude list. 
+    newExcludeDirs.sort((a, b) => a.length - b.length).filter((dir: string) => {
+        // assert
+        if (!dir.startsWith(workspaceDir)) {
+            console.log("filepicker: #updateIncludeAndExcludeDirs, illegal dir: " + dir);
+            return false;
+        }
+        // check if it is already excluded
+        if (checkDirExcludedState(dir, currentExcludeDirs).state == Not_Excluded_Yet) {
+            currentExcludeDirs.push(dir);
+            return true;
+        }
+        return false;
+    });
+
+    if (newExcludeDirs.length == 0) {
+        console.log("filepicker: nothing new excluded");
+        return;
+    }
+
+    saveWorkspaceConfiguration(currentExcludeDirs);
+
+
+    if (file_list.length == 0) {
+        console.log("filepicker: file list not loaded yet");
+        vscode.window.showInformationMessage("FilePicker: no search database, don't forget to build it later");
+        return;
+    }
+
+    // update files list: remove excluded files
+    await Promise.all(newExcludeDirs.map((dir) => {
+        walkFileTree(dir, currentExcludeDirs, (abs_path: string) => {
+            var file = abs_path.replace(workspaceDir, ".");
+            console.log("filepicker: remove " + file);
+            var index = file_list.indexOf(file);
+            if (index >= 0) file_list.splice(index, 1);
+        });
+    }));
+    persistFileListToDisk();
+}
+
+export async function cancelExcludeDirs(cancelExcludeDirs: string[]) {
+    if (cancelExcludeDirs.length == 0) return;
+
+    const workspaceDir = getWorkspaceDir();
+    const currentExcludeDirs = loadExcludedDirs();
+    const newDirs: string[] = []
+    cancelExcludeDirs.sort((a, b) => a.length - b.length).forEach((dir: string) => {
+        // assert
+        if (!dir.startsWith(workspaceDir)) {
+            console.log("filepicker: #updateIncludeAndExcludeDirs, illegal dir: " + dir);
+            return;
+        }
+        // check if it is already excluded
+        var state = checkDirExcludedState(dir, currentExcludeDirs);
+        var message = "";
+        switch (state.state) {
+            case Not_Excluded_Yet: {
+                break;
+            }
+            case ExactlyExcluded: {
+                removeElementFromArray(currentExcludeDirs, dir);
+                newDirs.push(dir);
+                break;
+            }
+            case ParentDirExcluded: {
+                message += "    " + state.extra.replace(workspaceDir, "${workspace}") + "\n";
+                break;
+            }
+        }
+        if (message.charAt(message.length - 1) == '\n') {
+            message = "fastpicker: please un-exclude the parent directies firstly:\n"
+                + message.substr(0, message.length - 1);
+            vscode.window.showInformationMessage(message);
+        }
+    });
+    
+    if (newDirs.length == 0) {
+        console.log("filepicker: #cancelExcludeDirs, nothing canceled");
+        vscode.window.showInformationMessage("FilePicker: no search database, don't forget to build it later");
+        return;
+    }
+
+    saveWorkspaceConfiguration(currentExcludeDirs);
+
+    if (file_list.length == 0) {
+        console.log("filepicker: file list not loaded yet");
+        return;
+    }
+
+    // update file list: index files in those dirs just unexcluded
+    await Promise.all(newDirs.map((dir) => {
+        walkFileTree(dir, currentExcludeDirs, (abs_path: string) => {
+            var file = abs_path.replace(workspaceDir, ".");
+            console.log("filepicker: found " + file);
+            file_list.push(file);
+        });
+    }));
+   
+    persistFileListToDisk();
+}
+
+
+const default_exclude_dirs = [".git", ".repo", ".vscode", ".qfile_picker"];
 function loadExcludedDirs() {
     const workspaceDir = getWorkspaceDir();
     let config = vscode.workspace.getConfiguration("filepicker");
@@ -63,7 +176,7 @@ function loadExcludedDirs() {
         // remove duplicated items and empty string
         return elem.length > 0;
     }) : []);
-    var results = [".git", ".repo", ".vscode", ".qfile_picker"];
+    var results = [...default_exclude_dirs];
     excludeDirs.forEach((item) => {
         results.push(path.resolve(item.replace("${workspace}", workspaceDir)));
     });
@@ -71,68 +184,22 @@ function loadExcludedDirs() {
     return results;
 }
 
-const property_key_exclude_dirs = "excludeDirs";
-
-export async function addExcludeDirs(newExcludeDirs: string[]) {
-    if (cancelExcludeDirs.length == 0) return;
-    
-    const currentExcludeDirs = loadExcludedDirs();
-    const workspaceDir = getWorkspaceDir();
-    // sort the array, make top level directies appear in the front of the array,
-    // thus if a top level dir was added into excluded dirs, no  sub-directies of it
-    // would be appened to the exclude list. 
-    newExcludeDirs.sort((a, b) => a.length - b.length).forEach((dir: string) => {
-        // assert
-        if (!dir.startsWith(workspaceDir)) {
-            console.log("filepicker: #updateIncludeAndExcludeDirs, illegal dir: " + dir);
-            return;
-        }
-        // check if it is already excluded
-        if (checkDirExcludedState(dir, currentExcludeDirs).state == Not_Excluded_Yet) {
-            currentExcludeDirs.push(dir);
-        }
-    });
-
-    saveWorkspaceConfiguration(currentExcludeDirs);
-}
-
-export async function cancelExcludeDirs(cancelExcludeDirs: string[]) {
-    if (cancelExcludeDirs.length == 0) return;
-
-    const workspaceDir = getWorkspaceDir();
-    const currentExcludeDirs = loadExcludedDirs();
-    cancelExcludeDirs.sort((a, b) => a.length - b.length).forEach((dir: string) => {
-        // assert
-        if (!dir.startsWith(workspaceDir)) {
-            console.log("filepicker: #updateIncludeAndExcludeDirs, illegal dir: " + dir);
-            return;
-        }
-        // check if it is already excluded
-        var state = checkDirExcludedState(dir, currentExcludeDirs);
-        var message = "Please cancel exclude on the following parent directies firstly\n";
-        switch (state.state) {
-            case Not_Excluded_Yet: break;
-            case ExactlyExcluded: removeElementFromArray(currentExcludeDirs, dir);
-            case ParentDirExcluded: {
-                message += "    " + state.extra + "\n";
-                break;
-            }
-        }
-        vscode.window.showInformationMessage(message);
-    });
-    saveWorkspaceConfiguration(currentExcludeDirs);
-}
-
 
 function saveWorkspaceConfiguration(excludeDirs: string[]) {
     let config = vscode.workspace.getConfiguration("filepicker");
     var excludeDirsConfig = "";
+    const workspaceDir = getWorkspaceDir();
     for (var dir of excludeDirs) {
-        if (excludeDirsConfig.indexOf(dir) < 0) {
-            excludeDirsConfig += ":" + dir;
+        if (default_exclude_dirs.indexOf(dir) >= 0) {
+            // don't wirte defaults
+            continue;
         }
+        excludeDirsConfig += ":" + dir.replace(workspaceDir, "${workspace}");
     }
-    config.update(property_key_exclude_dirs, excludeDirsConfig);
+    if (excludeDirsConfig.length > 1) {
+        excludeDirsConfig = excludeDirsConfig.substring(1);
+        config.update(property_key_exclude_dirs, excludeDirsConfig);
+    }
 }
 
 
@@ -152,12 +219,13 @@ function checkDirExcludedState(newExcludeDir: string, excludedDirs: string[]) {
     var workspaceDir = getWorkspaceDir();
     var dir = newExcludeDir;
     while (dir != workspaceDir) {
-        if (excludedDirs.includes(dir)) {
+        if (excludedDirs.indexOf(dir) >= 0) {
             if (dir == newExcludeDir) {
                 return new FileExcludeState(ExactlyExcluded, "");;
             }
-            return new FileExcludeState(ParentDirExcluded, "");;
+            return new FileExcludeState(ParentDirExcluded, dir);;
         }
+        dir = path.dirname(dir);
     }
     return new FileExcludeState(Not_Excluded_Yet, "");
 }
@@ -168,7 +236,6 @@ function removeElementFromArray(nums: string[], elem: string) {
         nums.splice(index, 1);
     }
 }
-
 
 function persistFileListToDisk() {
     var workspaceFolder = getWorkspaceDir();
@@ -181,7 +248,6 @@ function persistFileListToDisk() {
     });
     stream.end();
     fs.rename(tmpCacheFile, cacheFile, () => { });
-    return workspaceFolder;
 }
 
 export async function buildFileListCache(onNewFile: any) {
