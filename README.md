@@ -21,6 +21,7 @@ That's it!
 
 # TODO
 - follow symbolic links during build search database
+- display file type icon in quick pick view
 
 # How To Run Locally
 Clone this project into your local disk and open it in vscode, press F5, there you go!
