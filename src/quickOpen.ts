@@ -71,9 +71,9 @@ function prepareCandidates(input: QuickPick<FileItem | MessageItem>, lines: stri
 	}
 	console.log("filepicker: #prepareCandidates, pattern=" + pattern);
 	if (lines.length == 0) {
-		input.items = input.items.concat([
+		input.items = [
 			new MessageItem("Did you forget building search database?", "please run `FilePicker: Build Search Database`")
-		]);
+		];
 		console.log("filepicker: no available cache, perhaps you forgot to build it?");
 	} else {
 		const results: (FileItem | MessageItem)[] = [];

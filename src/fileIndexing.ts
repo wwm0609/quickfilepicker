@@ -280,6 +280,7 @@ export async function buildSearchDatabase() {
     myStatusBarItem.text = `filepicker: indexing...`;
     myStatusBarItem.show();
     var count = 0
+    file_list.length = 0;
     await walkFileTree(workspaceFolder, excludeDirs, (abs_path: string) => {
         var file = abs_path.replace(workspaceFolder, ".");
         // console.log("filepicker: found " + file);

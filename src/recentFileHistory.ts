@@ -5,7 +5,7 @@ import fs = require('fs');
 import * as path from 'path';
 
 
-const recentlyOpenedFileList: string[] = []
+const recentlyOpenedFileList: string[] = [];
 
 export function getRecentlyOpenedFileList() {
     return recentlyOpenedFileList;
@@ -15,31 +15,42 @@ export function getRecentlyOpenedFileList() {
 var recentOpenedFileListChanged = false;
 
 export function initRecentFileHistory() {
-    // flush every 30 sec
-    setInterval(persistRecentlyOpenedFileNames, 10000, recentlyOpenedFileList);
-    readRecentlyOpenedFileNames();
+    // flush every 10 sec
+    setInterval(persistRecentlyOpenedFileNames, 10000);
+    loadRecentlyOpenedFileListCache();
+    var editor = vscode.window.activeTextEditor;
+    if (editor) {
+        var file =  editor.document.uri.fsPath;
+        recordOpenedFile(file);
+    }
+
     vscode.window.onDidChangeActiveTextEditor((editor) => {
         var textEditor = editor ? editor : vscode.window.activeTextEditor;
         if (!textEditor) {
             return;
         }
         var file = textEditor.document.uri.fsPath;
-        var workspaceDir = getWorkspaceDir()
-        // don't record files not in this workspace
-        if (file.indexOf(workspaceDir) < 0) {
-            console.log("filepicker: #updateRecentlyOpenedFilesList: ingore " + file);
-            return false;
-        }
-        file = file.replace(workspaceDir, ".");
-        console.log("filepicker: opened " + file);
-        if (updateRecentlyOpenedFilesList(file, recentlyOpenedFileList)) {
-            recentOpenedFileListChanged = true;
-        }
+        recordOpenedFile(file);
+        recentOpenedFileListChanged = (recentOpenedFileListChanged || recordOpenedFile(file));
     });
 }
 
 
-function updateRecentlyOpenedFilesList(file: string, lines: string[]) {
+function recordOpenedFile(file:string) {
+    var workspaceDir = getWorkspaceDir()
+    // don't record files not in this workspace
+    if (file.indexOf(workspaceDir) < 0) {
+        console.log("filepicker: #updateRecentlyOpenedFilesList: ingore " + file);
+        return false;
+    }
+    file = file.replace(workspaceDir, ".");
+    console.log("filepicker: opened " + file);
+    return updateRecentlyOpenedFilesList(file);
+}
+
+
+function updateRecentlyOpenedFilesList(file: string) {
+    var lines = recentlyOpenedFileList;
     var index = -1;
     if ((index = lines.indexOf(file)) >= 0) {
         lines.splice(index, 1);
@@ -71,7 +82,7 @@ function getRecentlyOpenedFilesCacheFile() {
     return file;
 }
 
-function readRecentlyOpenedFileNames() {
+function loadRecentlyOpenedFileListCache() {
     var file = getRecentlyOpenedFilesCacheFile();
     fs.stat(file, (err, fileStat) => {
         if (err || !fileStat.isFile()) {
@@ -79,18 +90,15 @@ function readRecentlyOpenedFileNames() {
             return;
         }
 
+        console.log("filepicker: load recently opened file list cache");
         const readInterface = readline.createInterface({
             input: fs.createReadStream(file),
             output: process.stdout,
         });
-        var lines: string[] = []
         readInterface.on('line', function (line: string) {
             if (line.length > 0 && !line.startsWith('#')) {
-                updateRecentlyOpenedFilesList(line, lines)
+                updateRecentlyOpenedFilesList(line)
             }
-        });
-        readInterface.on('close', () => {
-            recentlyOpenedFileList.splice(0, recentlyOpenedFileList.length).push(...lines);
         });
     });
 }
