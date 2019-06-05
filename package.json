@@ -2,7 +2,7 @@
   "name": "file-searcher",
   "displayName": "Fast File Picker",
   "description": "Searching files on the fly",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "vscode-wwm-quickpick",
   "engines": {
     "vscode": "^1.32.0"
@@ -23,10 +23,12 @@
       {
         "command": "wwm.buildFileList",
         "title": "FilePicker: Build Search Database"
-      },{
+      },
+      {
         "command": "wwm.cancelExcludeDir",
         "title": "FilePicker: cancel exclude dirs"
-      },{
+      },
+      {
         "command": "wwm.excludeDir",
         "title": "FilePicker: exclude dirs"
       }
@@ -42,25 +44,27 @@
       "type": "object",
       "title": "FilePicker",
       "properties": {
-          "filepicker.excludeDirs": {
-              "type": "string",
-              "default": "",
-
-              "description": "Specifies the folders that you don't want to be indexed, multiple dirs are sepearted by ':' letter, e.g. ${workspace}/out:${workspace}/build:/mnt/aosp/cts/:.git; FYI, ${workspace} will be replaced with the path of the opened workspace. By default, all hidden files and folder will be skipped, you can manually add a directory into exclude list by right-click on folers in the file explorer sidebar, then click 'filepicker: exclude dirs'"
-          }
+        "filepicker.excludeDirs": {
+          "type": "string",
+          "default": "",
+          "description": "Specifies the folders that you don't want to be indexed, multiple dirs are sepearted by ':' letter, e.g. ${workspace}/out:${workspace}/build:/mnt/aosp/cts/:.git; FYI, ${workspace} will be replaced with the path of the opened workspace. By default, all hidden files and folder will be skipped, you can manually add a directory into exclude list by right-click on folers in the file explorer sidebar, then click 'filepicker: exclude dirs'"
+        }
       }
     },
     "menus": {
-      "explorer/context": [{
+      "explorer/context": [
+        {
           "when": "explorerResourceIsFolder",
           "command": "wwm.cancelExcludeDir",
           "group": "filepicker"
-      },{
-        "when": "explorerResourceIsFolder",
-        "command": "wwm.excludeDir",
-        "group": "filepicker"
-    }]
-  }
+        },
+        {
+          "when": "explorerResourceIsFolder",
+          "command": "wwm.excludeDir",
+          "group": "filepicker"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
