@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { quickOpen } from './quickOpen';
 import { buildSearchDatabase, cancelExcludeDirs, addExcludeDirs } from './fileIndexing'
 import { commands, ExtensionContext } from 'vscode';
-import { getRecentlyOpenedFileList, initRecentFileHistory } from './recentFileHistory'
+import { initRecentFileHistory } from './recentFileHistory'
 import { getWorkspaceDir, ensureCacheDirSync } from "./constants";
 
 let isBuildingSearchDatabase: boolean = false;
@@ -13,7 +13,7 @@ export function activate(context: ExtensionContext) {
 	ensureCacheDirSync();
 	initRecentFileHistory();
 	context.subscriptions.push(commands.registerCommand('wwm.quickInput', async () => {
-		quickOpen(getRecentlyOpenedFileList());
+		quickOpen();
 	}));
 	context.subscriptions.push(commands.registerCommand('wwm.buildFileList', async () => {
 		if (isBuildingSearchDatabase) {

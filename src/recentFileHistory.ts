@@ -16,7 +16,7 @@ var recentOpenedFileListChanged = false;
 
 export function initRecentFileHistory() {
     // flush every 30 sec
-    setInterval(persistRecentlyOpenedFileNames, 60000, recentlyOpenedFileList);
+    setInterval(persistRecentlyOpenedFileNames, 10000, recentlyOpenedFileList);
     readRecentlyOpenedFileNames();
     vscode.window.onDidChangeActiveTextEditor((editor) => {
         var textEditor = editor ? editor : vscode.window.activeTextEditor;
@@ -24,6 +24,14 @@ export function initRecentFileHistory() {
             return;
         }
         var file = textEditor.document.uri.fsPath;
+        var workspaceDir = getWorkspaceDir()
+        // don't record files not in this workspace
+        if (file.indexOf(workspaceDir) < 0) {
+            console.log("filepicker: #updateRecentlyOpenedFilesList: ingore " + file);
+            return false;
+        }
+        file = file.replace(workspaceDir, ".");
+        console.log("filepicker: opened " + file);
         if (updateRecentlyOpenedFilesList(file, recentlyOpenedFileList)) {
             recentOpenedFileListChanged = true;
         }
@@ -32,14 +40,6 @@ export function initRecentFileHistory() {
 
 
 function updateRecentlyOpenedFilesList(file: string, lines: string[]) {
-    var workspaceDir = getWorkspaceDir()
-    // don't record files not located in this workspace
-    if (file.indexOf(workspaceDir) < 0) {
-        console.log("filepicker: #updateRecentlyOpenedFilesList: ingore " + file);
-        return false;
-    }
-    file = file.replace(workspaceDir, ".");
-    console.log("filepicker: opened " + file);
     var index = -1;
     if ((index = lines.indexOf(file)) >= 0) {
         lines.splice(index, 1);

@@ -2,7 +2,7 @@ import * as path from 'path';
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
 import { getWorkspaceDir, fuzzy_match_simple } from "./constants";
 import { loadSearchDatabase } from './fileIndexing';
-
+import { getRecentlyOpenedFileList } from './recentFileHistory'
 
 /**
  * A file opener using window.createQuickPick().
@@ -10,8 +10,8 @@ import { loadSearchDatabase } from './fileIndexing';
  * It shows how the list of items can be dynamically updated based on
  * the user's input in the filter field.
  */
-export async function quickOpen(recentlyOpenedFiles: string[]) {
-	const uri = await pickFile(recentlyOpenedFiles);
+export async function quickOpen() {
+	const uri = await pickFile();
 	if (uri) {
 		const document = await workspace.openTextDocument(uri);
 		await window.showTextDocument(document);
@@ -24,7 +24,7 @@ class FileItem implements QuickPickItem {
 
 	constructor(public base: Uri, public uri: Uri) {
 		this.label = path.basename(uri.fsPath);
-		this.description = path.dirname(path.relative(base.fsPath, uri.fsPath));
+		this.description = uri.fsPath;
 	}
 }
 
@@ -45,47 +45,64 @@ function isPatternMatch(pattern: string, file: string) {
 }
 
 async function queryCandidates(input: QuickPick<FileItem | MessageItem>, value: string) {
-	console.log("filepicker: #queryCandidates, pattern=" + value);
 	input.items = [];
 	if (!value) {
+		showRentlyFiles(input);
 		return;
 	}
+
 	input.busy = true;
-	console.time("filepicker: queryCandidates");
-	console.time("filepicker_getFileList");
+	console.time("filepicker_queryCandidates");
+	console.time("filepicker_loadSearchDatabase");
 	var lines = await loadSearchDatabase();
-	console.timeEnd("filepicker_getFileList");
+	console.timeEnd("filepicker_loadSearchDatabase");
 	prepareCandidates(input, lines, value);
 	input.busy = false;
-	console.timeEnd("filepicker: queryCandidates");
+	console.timeEnd("filepicker_queryCandidates");
 }
 
 // todo: support showing icons of different file types
-function prepareCandidates(input: QuickPick<FileItem | MessageItem>, lines: string[], value: string) {
+function prepareCandidates(input: QuickPick<FileItem | MessageItem>, lines: string[], pattern: string) {
 	console.time("filepicker: #prepareCandidates");
 	var workspaceFolder = getWorkspaceDir();
+	// absolute path?
+	if (pattern.startsWith("/")) {
+		pattern = pattern.replace(workspaceFolder, ".")
+	}
+	console.log("filepicker: #prepareCandidates, pattern=" + pattern);
 	if (lines.length == 0) {
 		input.items = input.items.concat([
-			new MessageItem("Did you forget building database?", "please run comand `FilePicker: Build Search Database`")
+			new MessageItem("Did you forget building search database?", "please run `FilePicker: Build Search Database`")
 		]);
 		console.log("filepicker: no available cache, perhaps you forgot to build it?");
 	} else {
-		input.items = input.items.concat(lines.filter(function (element) {
-			return isPatternMatch(value, element);
-		}).map(file => new FileItem(Uri.file(workspaceFolder), Uri.file(path.join(workspaceFolder, file)))));
+		const results: (FileItem | MessageItem)[] = [];
+		lines.some((file) => {
+			// todo: paging?
+			if (results.length >= 500) {
+				console.log("filepicker: too many search results, please narrow down the pattern")
+				return true; // abort the forEach loop
+			}
+			if (isPatternMatch(pattern, file)) {
+				results.push(new FileItem(Uri.file(workspaceFolder), Uri.file(path.join(workspaceFolder, file))));
+			}
+			return false;
+		});
+		input.items = results;
 	}
 	console.timeEnd("filepicker: #prepareCandidates");
 }
 
-async function pickFile(recentlyOpenedFiles: string[]) {
+async function pickFile() {
 	const disposables: Disposable[] = [];
 	try {
 		return await new Promise<Uri | undefined>((resolve, reject) => {
 			const input = window.createQuickPick<FileItem | MessageItem>();
+			input.matchOnDescription = true;
+			// input.matchOnDetail = true;
 			const timeoutObjs: any[] = []
 			input.placeholder = 'FilePicker: Type To Search For Files';
-			var workspaceFolder = getWorkspaceDir();
-			input.items = [...recentlyOpenedFiles.map((relative_path) => new FileItem(Uri.file(workspaceFolder), Uri.file(path.join(workspaceFolder, relative_path))))];
+			showRentlyFiles(input);
 			disposables.push(
 				input.onDidChangeValue(key => {
 					if (timeoutObjs.length > 0) {
@@ -114,4 +131,10 @@ async function pickFile(recentlyOpenedFiles: string[]) {
 	} finally {
 		disposables.forEach(d => d.dispose());
 	}
+}
+
+function showRentlyFiles(input: QuickPick<FileItem | MessageItem>) {
+	const workspaceFolder = getWorkspaceDir();
+	input.items = [...getRecentlyOpenedFileList().map(
+		(relative_path) => new FileItem(Uri.file(workspaceFolder), Uri.file(path.join(workspaceFolder, relative_path))))];
 }
