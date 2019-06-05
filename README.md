@@ -6,16 +6,18 @@ Hit `Ctrl + Shirft + P` and input 'FilePicker', you'll see:
 > FilePicker: Search Files
 > FilePicker: Build Search Database
 ```
-## Screenshot
-<img src="./resources/dark/file-picker-commands.png">
 
 ## Steps:
 1. exclude certain directories that you want to ignore
-   <img src="./resources/dark/exclude_dirs.png">
 2. built the search database, you have to manually execute the command.
 3. search for files
- 
 That's it!
+
+## Screenshot
+<img src="https://raw.githubusercontent.com/wwm0609/quickfilepicker/master/resources/dark/file-picker-commands.png">    
+
+<img src="https://raw.githubusercontent.com/wwm0609/quickfilepicker/master/resources/dark/exclude_dirs.png">
+ 
 
 # TODO
 - follow symbolic links during build search database
