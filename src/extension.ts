@@ -1,17 +1,24 @@
 import * as vscode from 'vscode';
 import { quickOpen } from './quickOpen';
-import { buildSearchDatabase, cancelExcludeDirs, addExcludeDirs } from './fileIndexing'
+import { buildSearchDatabase, cancelExcludeDirs, addExcludeDirs, loadSearchDatabaseAsync } from './fileIndexing'
 import { commands, ExtensionContext } from 'vscode';
 import { initRecentFileHistory } from './recentFileHistory'
-import { getWorkspaceDir, ensureCacheDirSync } from "./constants";
+import { getWorkspaceDir, ensureCacheDirSync, log, setLogLevel } from "./constants";
 
 let isBuildingSearchDatabase: boolean = false;
 
 export function activate(context: ExtensionContext) {
 	const workspaceDir = getWorkspaceDir();
-	console.log("filepicker: activated for " + workspaceDir);
+	log("filepicker: activated for " + workspaceDir);
 	ensureCacheDirSync();
 	initRecentFileHistory();
+	setLogLevel(vscode.workspace.getConfiguration("FilePicker")
+		.get("showDebugLog", "None"));
+	vscode.workspace.onDidChangeConfiguration((e) => {
+		setLogLevel(vscode.workspace.getConfiguration("FilePicker")
+			.get("showDebugLog", "None"));
+	});
+
 	context.subscriptions.push(commands.registerCommand('wwm.quickInput', async () => {
 		quickOpen();
 	}));
@@ -24,19 +31,20 @@ export function activate(context: ExtensionContext) {
 		// update status bar every 100 millis
 		var database = await buildSearchDatabase().catch((err) => {
 			isBuildingSearchDatabase = false;
-			console.log("filepicker: failed to build file list database", err);
+			log("filepicker: failed to build file list database, " + err);
 		});
 		vscode.window.showInformationMessage("fastpicker: search database created, see " + database);
 		isBuildingSearchDatabase = false;
 	}));
 	context.subscriptions.push(commands.registerCommand('wwm.cancelExcludeDir',
-			async (mainUri?: vscode.Uri, allUris?: vscode.Uri[]) => {
-		cancelExcludeDirs(mapUrisToFilePathes(allUris, mainUri));
-	}));
+		async (mainUri?: vscode.Uri, allUris?: vscode.Uri[]) => {
+			cancelExcludeDirs(mapUrisToFilePathes(allUris, mainUri));
+		}));
 	context.subscriptions.push(commands.registerCommand('wwm.excludeDir',
 		async (mainUri?: vscode.Uri, allUris?: vscode.Uri[]) => {
-		addExcludeDirs(mapUrisToFilePathes(allUris, mainUri));
-	}));
+			addExcludeDirs(mapUrisToFilePathes(allUris, mainUri));
+		}));
+	loadSearchDatabaseAsync();
 }
 
 function mapUrisToFilePathes(allUris: vscode.Uri[] | undefined, mainUri: vscode.Uri | undefined) {

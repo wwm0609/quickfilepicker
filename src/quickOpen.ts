@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
-import { getWorkspaceDir, fuzzy_match_simple } from "./constants";
-import { loadSearchDatabase } from './fileIndexing';
+import { getWorkspaceDir, fuzzy_match_simple, log } from "./constants";
+import { loadSearchDatabaseAsync } from './fileIndexing';
 import { getRecentlyOpenedFileList } from './recentFileHistory'
 
 /**
@@ -54,7 +54,7 @@ async function queryCandidates(input: QuickPick<FileItem | MessageItem>, value: 
 	input.busy = true;
 	console.time("filepicker_queryCandidates");
 	console.time("filepicker_loadSearchDatabase");
-	var lines = await loadSearchDatabase();
+	var lines = await loadSearchDatabaseAsync();
 	console.timeEnd("filepicker_loadSearchDatabase");
 	prepareCandidates(input, lines, value);
 	input.busy = false;
@@ -69,18 +69,18 @@ function prepareCandidates(input: QuickPick<FileItem | MessageItem>, lines: stri
 	if (pattern.startsWith("/")) {
 		pattern = pattern.replace(workspaceFolder, ".")
 	}
-	console.log("filepicker: #prepareCandidates, pattern=" + pattern);
+	log("filepicker: #prepareCandidates, pattern=" + pattern);
 	if (lines.length == 0) {
 		input.items = [
 			new MessageItem("Did you forget building search database?", "please run `FilePicker: Build Search Database`")
 		];
-		console.log("filepicker: no available cache, perhaps you forgot to build it?");
+		log("filepicker: no available cache, perhaps you forgot to build it?");
 	} else {
 		const results: (FileItem | MessageItem)[] = [];
 		lines.some((file) => {
 			// todo: paging?
 			if (results.length >= 500) {
-				console.log("filepicker: too many search results, please narrow down the pattern")
+				log("filepicker: too many search results, please narrow down the pattern")
 				return true; // abort the forEach loop
 			}
 			if (isPatternMatch(pattern, file)) {
@@ -106,7 +106,7 @@ async function pickFile() {
 			disposables.push(
 				input.onDidChangeValue(key => {
 					if (timeoutObjs.length > 0) {
-						console.log("filepicker: input changed too frequently, cancel previous query");
+						log("filepicker: input changed too frequently, cancel previous query");
 						clearTimeout(timeoutObjs[0]);
 						timeoutObjs.length = 0;
 					}

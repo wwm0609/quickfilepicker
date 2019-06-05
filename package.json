@@ -44,10 +44,22 @@
       "type": "object",
       "title": "FilePicker",
       "properties": {
-        "filepicker.excludeDirs": {
+        "FilePicker.excludeDirs": {
           "type": "string",
           "default": "",
           "description": "Specifies the folders that you don't want to be indexed, multiple dirs are sepearted by ':' letter, e.g. ${workspace}/out:${workspace}/build:/mnt/aosp/cts/:.git; FYI, ${workspace} will be replaced with the path of the opened workspace. By default, all hidden files and folder will be skipped, you can manually add a directory into exclude list by right-click on folers in the file explorer sidebar, then click 'filepicker: exclude dirs'"
+        },
+        "FilePicker.showDebugLog": {
+          "type": "string",
+          "default": "None",
+          "enum": [
+						"None",
+						"Verbose",
+						"Debug",
+						"Info",
+						"Warning",
+						"Error"
+					]
         }
       }
     },

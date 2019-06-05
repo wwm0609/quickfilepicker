@@ -6,10 +6,69 @@ export const ConfigDir = "./.q_file_picker/"
 export const FilePickerSearchtDatabaseFile = "./.q_file_picker/quick_open_file_list.db"
 export const FilePickerRecentlyOpenedFileListFile = "./.q_file_picker/quick_open_recently_files.db"
 
+const NONE = 0;
+const Verbose = 1;
+const Debug = 2;
+const Info = 3;
+const Warning = 4;
+const Error = 5;
+
+var level = NONE;
+
 export function ensureCacheDirSync() {
     var dir = path.resolve(getWorkspaceDir(), ConfigDir);
     if (!existsSync(dir)) mkdirSync(dir);
 }
+
+export function setLogLevel(new_level: string) {
+    switch (new_level.toLowerCase()) {
+        case "none": level = NONE; break;
+        case "verbose": level = Verbose; break;
+        case "debug": level = Debug; break;
+        case "info": level = Info; break;
+        case "warning": level = Warning; break;
+        case "error": level = Error; break;
+        default: level = NONE;
+    }
+    console.log("filepicker: set log level to " + new_level)
+}
+
+export function logv(message: string) {
+    if (Verbose >= level) {
+        console.log(message);
+    }
+}
+
+export function log(message: any) {
+    if (Debug >= level) {
+        console.log(message);
+    }
+}
+
+export function logd(message: string) {
+    if (Debug >= level) {
+        console.log(message);
+    }
+}
+
+export function logi(message: string) {
+    if (Info >= level) {
+        console.log(message);
+    }
+}
+
+export function logw(message: string) {
+    if (Warning >= level) {
+        console.log(message);
+    }
+}
+
+export function loge(message: string) {
+    if (Error >= level) {
+        console.log(message);
+    }
+}
+
 
 export function getWorkspaceDir() {
     const cwds = vscode.workspace.workspaceFolders ?

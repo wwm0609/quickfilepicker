@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import readline = require('readline');
-import { FilePickerRecentlyOpenedFileListFile, getWorkspaceDir } from "./constants";
+import { FilePickerRecentlyOpenedFileListFile, getWorkspaceDir, log } from "./constants";
 import fs = require('fs');
 import * as path from 'path';
 
@@ -39,12 +39,13 @@ export function initRecentFileHistory() {
 function recordOpenedFile(file:string) {
     var workspaceDir = getWorkspaceDir()
     // don't record files not in this workspace
+    log("filepicker: just opened " + file);
     if (file.indexOf(workspaceDir) < 0) {
-        console.log("filepicker: #updateRecentlyOpenedFilesList: ingore " + file);
+        log("filepicker: #updateRecentlyOpenedFilesList: ingore " + file);
         return false;
     }
     file = file.replace(workspaceDir, ".");
-    console.log("filepicker: opened " + file);
+    log("filepicker: opened " + file);
     return updateRecentlyOpenedFilesList(file);
 }
 
@@ -73,7 +74,7 @@ function persistRecentlyOpenedFileNames(fileList: string[]) {
     });
     stream.end();
     recentOpenedFileListChanged = false;
-    console.log("filepicker: persist recently opened file names to disk");
+    log("filepicker: persist recently opened file names to disk");
 }
 
 function getRecentlyOpenedFilesCacheFile() {
@@ -86,11 +87,11 @@ function loadRecentlyOpenedFileListCache() {
     var file = getRecentlyOpenedFilesCacheFile();
     fs.stat(file, (err, fileStat) => {
         if (err || !fileStat.isFile()) {
-            console.log("filepicker: recently opened file cache not exist");
+            log("filepicker: recently opened file cache not exist");
             return;
         }
 
-        console.log("filepicker: load recently opened file list cache");
+        log("filepicker: load recently opened file list cache");
         const readInterface = readline.createInterface({
             input: fs.createReadStream(file),
             output: process.stdout,
