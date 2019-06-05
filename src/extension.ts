@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import { quickOpen } from './quickOpen';
-import { buildFileListCache, cancelExcludeDirs, addExcludeDirs } from './fileIndexing'
+import { buildSearchDatabase, cancelExcludeDirs, addExcludeDirs } from './fileIndexing'
 import { commands, ExtensionContext } from 'vscode';
-import { recentlyOpenedFileList, initRecentFileHistory } from './recentFileHistory'
+import { getRecentlyOpenedFileList, initRecentFileHistory } from './recentFileHistory'
 import { getWorkspaceDir, ensureCacheDirSync } from "./constants";
 
-let isBuildingFileList: boolean = false;
+let isBuildingSearchDatabase: boolean = false;
 
 export function activate(context: ExtensionContext) {
 	const workspaceDir = getWorkspaceDir();
@@ -13,40 +13,33 @@ export function activate(context: ExtensionContext) {
 	ensureCacheDirSync();
 	initRecentFileHistory();
 	context.subscriptions.push(commands.registerCommand('wwm.quickInput', async () => {
-		quickOpen(recentlyOpenedFileList);
+		quickOpen(getRecentlyOpenedFileList());
 	}));
 	context.subscriptions.push(commands.registerCommand('wwm.buildFileList', async () => {
-		if (isBuildingFileList) {
+		if (isBuildingSearchDatabase) {
 			vscode.window.showInformationMessage("filepicker: busy now, please try it later");
 			return;
 		}
-		const myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-		isBuildingFileList = true;
-		myStatusBarItem.text = `filepicker: indexing...`;
-		myStatusBarItem.show();
-		var count = 0;
+		isBuildingSearchDatabase = true;
 		// update status bar every 100 millis
-		const intervalObj = setInterval(() => myStatusBarItem.text = `filepicker: ` + count, 100)
-		var database = await buildFileListCache(() => ++count).catch((err) => {
-			isBuildingFileList = false;
+		var database = await buildSearchDatabase().catch((err) => {
+			isBuildingSearchDatabase = false;
 			console.log("filepicker: failed to build file list database", err);
 		});
-		isBuildingFileList = false;
-		clearInterval(intervalObj);
-		myStatusBarItem.hide();
-		vscode.window.showInformationMessage("fastpicker: indexing finished, see " + database);
+		vscode.window.showInformationMessage("fastpicker: search database created, see " + database);
+		isBuildingSearchDatabase = false;
 	}));
 	context.subscriptions.push(commands.registerCommand('wwm.cancelExcludeDir',
 			async (mainUri?: vscode.Uri, allUris?: vscode.Uri[]) => {
-		cancelExcludeDirs(mapUri(allUris, mainUri));
+		cancelExcludeDirs(mapUrisToFilePathes(allUris, mainUri));
 	}));
 	context.subscriptions.push(commands.registerCommand('wwm.excludeDir',
 		async (mainUri?: vscode.Uri, allUris?: vscode.Uri[]) => {
-		addExcludeDirs(mapUri(allUris, mainUri));
+		addExcludeDirs(mapUrisToFilePathes(allUris, mainUri));
 	}));
 }
 
-function mapUri(allUris: vscode.Uri[] | undefined, mainUri: vscode.Uri | undefined) {
+function mapUrisToFilePathes(allUris: vscode.Uri[] | undefined, mainUri: vscode.Uri | undefined) {
 	var dirs: string[] = [];
 	for (const uri of Array.isArray(allUris) ? allUris : [mainUri]) {
 		if (uri instanceof vscode.Uri) {

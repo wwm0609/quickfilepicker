@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
 import { getWorkspaceDir, fuzzy_match_simple } from "./constants";
-import { getFileList } from './fileIndexing';
+import { loadSearchDatabase } from './fileIndexing';
 
 
 /**
@@ -52,9 +52,9 @@ async function queryCandidates(input: QuickPick<FileItem | MessageItem>, value: 
 	}
 	input.busy = true;
 	console.time("filepicker: queryCandidates");
-	console.time("filepicker#getFileList");
-	var lines = await getFileList();
-	console.timeEnd("filepicker#getFileList");
+	console.time("filepicker_getFileList");
+	var lines = await loadSearchDatabase();
+	console.timeEnd("filepicker_getFileList");
 	prepareCandidates(input, lines, value);
 	input.busy = false;
 	console.timeEnd("filepicker: queryCandidates");
@@ -89,7 +89,7 @@ async function pickFile(recentlyOpenedFiles: string[]) {
 			disposables.push(
 				input.onDidChangeValue(key => {
 					if (timeoutObjs.length > 0) {
-						console.log("filepicker: cancel previous query");
+						console.log("filepicker: input changed too frequently, cancel previous query");
 						clearTimeout(timeoutObjs[0]);
 						timeoutObjs.length = 0;
 					}

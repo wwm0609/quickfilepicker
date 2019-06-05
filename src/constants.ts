@@ -3,8 +3,8 @@ import * as vscode from 'vscode';
 import { mkdirSync, existsSync } from 'fs';
 import * as path from 'path';
 export const ConfigDir = "./.q_file_picker/"
-export const QuickOpenFileListDatabaseFile = "./.q_file_picker/quick_open_file_list.db"
-export const RecentlyOpenedFileCacheFile = "./.q_file_picker/quick_open_recently_files.db"
+export const FilePickerSearchtDatabaseFile = "./.q_file_picker/quick_open_file_list.db"
+export const FilePickerRecentlyOpenedFileListFile = "./.q_file_picker/quick_open_recently_files.db"
 
 export function ensureCacheDirSync() {
     var dir = path.resolve(getWorkspaceDir(), ConfigDir);
