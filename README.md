@@ -1,18 +1,24 @@
 # Quick File Picker
 
 # How to use
-Hit `CMD + Shirft + P` and input 'wwm', you'll see:
+Hit `Ctrl + Shirft + P` and input 'FilePicker', you'll see:
 ```
 > FilePicker: Search Files
 > FilePicker: Build Search Database
 ```
+## Screenshot
+<img src="./resources/dark/file-picker-commands.png">
 
-Build file list database, then search for files, that's it!
+## Steps:
+1. exclude certain directories that you want to ignore
+   <img src="./resources/dark/exclude_dirs.png">
+2. built the search database, you have to manually execute the command.
+3. search for files
+ 
+That's it!
 
 # TODO
-### Category: indexing
-- follow symbolic links
-- rank search results based on how much they matched the pattern which user inputed
+- follow symbolic links during build search database
 
 # How To Run Locally
 Clone this project into your local disk and open it in vscode, press F5, there you go!
