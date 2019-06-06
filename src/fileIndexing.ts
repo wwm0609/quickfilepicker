@@ -92,11 +92,13 @@ export async function addExcludeDirs(dirs: string[]) {
     await Promise.all(newExcludeDirs.map((dir) => {
         return walkFileTree(dir, currentExcludeDirs, (abs_path: string) => {
             var file = abs_path.replace(workspaceDir, ".");
-            log("filepicker: remove " + file);
+            logv("filepicker: remove " + file);
             var index = file_list.indexOf(file);
-            if (index >= 0) file_list.splice(index, 1);
-            myStatusBarItem.text = `filepicker: exclude|` + (++count);
-            myStatusBarItem.show();
+            if (index >= 0) {
+                myStatusBarItem.text = `filepicker: exclude|` + (++count);
+                myStatusBarItem.show();
+                file_list.splice(index, 1);
+            }
         });
     }));
     myStatusBarItem.hide();

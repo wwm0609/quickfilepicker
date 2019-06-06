@@ -64,12 +64,12 @@ function updateRecentlyOpenedFilesList(file: string) {
     return true;
 }
 
-function persistRecentlyOpenedFileNames(fileList: string[]) {
+function persistRecentlyOpenedFileNames() {
     if (!recentOpenedFileListChanged) return;
     var file = getRecentlyOpenedFilesCacheFile();
     const stream = fs.createWriteStream(file);
     stream.write("# auto generated file, used to cache recently opened files\n");
-    fileList.forEach((file) => {
+    recentlyOpenedFileList.forEach((file) => {
         stream.write(file + '\n');
     });
     stream.end();
