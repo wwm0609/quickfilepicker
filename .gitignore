@@ -8,4 +8,5 @@ Thumbs.db
 out
 node_modules
 *.vsix
-.quick_open_file_list.db
+.q_file_picker*
+
