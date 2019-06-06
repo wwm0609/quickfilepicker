@@ -16,13 +16,13 @@ Hit `Ctrl + Shirft + P` and input 'FilePicker', you'll see:
 - Search for files
 That's it!
 
-<img src="https://raw.githubusercontent.com/wwm0609/quickfilepicker/master/resources/dark/how-to-use-fast-file-picker.gif">    
+<img src="https://raw.githubusercontent.com/wwm0609/quickfilepicker/master/how-to-use-fast-file-picker.gif">    
 
 
 ## Screenshot
-<img src="https://raw.githubusercontent.com/wwm0609/quickfilepicker/master/resources/dark/file-picker-commands.png">    
+<img src="https://raw.githubusercontent.com/wwm0609/quickfilepicker/master/file-picker-commands.png">    
 
-<img src="https://raw.githubusercontent.com/wwm0609/quickfilepicker/master/resources/dark/exclude_dirs.png">
+<img src="https://raw.githubusercontent.com/wwm0609/quickfilepicker/master/exclude_dirs.png">
 
 # TODO
 - follow symbolic links during build search database

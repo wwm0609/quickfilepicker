@@ -4,3 +4,6 @@ src/**
 .gitignore
 tsconfig.json
 tslint.json
+file-picker-commands.png
+exclude_dirs.png
+how-to-use-fast-file-picker.gif
