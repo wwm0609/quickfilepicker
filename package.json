@@ -47,7 +47,7 @@
         "FilePicker.excludeDirs": {
           "type": "string",
           "default": "",
-          "description": "Specifies the folders that you don't want to be indexed, multiple dirs are sepearted by ':' letter, e.g. ${workspace}/out:${workspace}/build:/mnt/aosp/cts/:.git; FYI, ${workspace} will be replaced with the path of the opened workspace. By default, all hidden files and folder will be skipped, you can manually add a directory into exclude list by right-click on folers in the file explorer sidebar, then click 'filepicker: exclude dirs'"
+          "description": "Specifies the folders that you don't want to be indexed, !!!you have to rebuild the search database manually after changed this!!!\nMultiple dirs are sepearted by ':' letter, e.g. ${workspace}/out:${workspace}/build:/mnt/aosp/cts/:.git\nIt's recommend that you add directories into the exclude list by using the explore context menu that we provided, goto the extension's detail page to take a preview.\nFYI, Hidden files won't be indexed anyway."
         },
         "FilePicker.showDebugLog": {
           "type": "string",

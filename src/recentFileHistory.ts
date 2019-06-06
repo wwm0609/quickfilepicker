@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import readline = require('readline');
-import { FilePickerRecentlyOpenedFileListFile, getWorkspaceDir, log } from "./constants";
+import { FilePickerRecentlyOpenedFileListFile, getWorkspaceDir, log, ensureCacheDirSync } from "./constants";
 import fs = require('fs');
 import * as path from 'path';
 
@@ -15,7 +15,7 @@ export function getRecentlyOpenedFileList() {
 var recentOpenedFileListChanged = false;
 
 export function initRecentFileHistory() {
-    // flush every 10 sec
+    // flush changes every 10 sec
     setInterval(persistRecentlyOpenedFileNames, 10000);
     loadRecentlyOpenedFileListCache();
     var editor = vscode.window.activeTextEditor;
@@ -79,6 +79,7 @@ function persistRecentlyOpenedFileNames() {
 
 function getRecentlyOpenedFilesCacheFile() {
     const workspaceDir = getWorkspaceDir();
+    ensureCacheDirSync();
     var file = path.resolve(workspaceDir, FilePickerRecentlyOpenedFileListFile);
     return file;
 }

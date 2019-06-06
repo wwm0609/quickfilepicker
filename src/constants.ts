@@ -6,12 +6,12 @@ export const ConfigDir = "./.q_file_picker/"
 export const FilePickerSearchtDatabaseFile = "./.q_file_picker/quick_open_file_list.db"
 export const FilePickerRecentlyOpenedFileListFile = "./.q_file_picker/quick_open_recently_files.db"
 
-const NONE = 0;
 const Verbose = 1;
 const Debug = 2;
 const Info = 3;
 const Warning = 4;
 const Error = 5;
+const NONE = 6;
 
 var level = NONE;
 
@@ -67,6 +67,13 @@ export function loge(message: string) {
     if (Error >= level) {
         console.log(message);
     }
+}
+
+
+export function getWorkspaceDirs() {
+    const cwds = vscode.workspace.workspaceFolders ?
+        vscode.workspace.workspaceFolders.map(f => f.uri.fsPath) : [process.cwd()];
+    return cwds;
 }
 
 

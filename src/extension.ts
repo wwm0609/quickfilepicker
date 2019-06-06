@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { quickOpen } from './quickOpen';
-import { buildSearchDatabase, cancelExcludeDirs, addExcludeDirs, loadSearchDatabaseAsync } from './fileIndexing'
+import { buildSearchDatabase, cancelExcludeDirs, addExcludeDirs } from './fileIndexing'
 import { commands, ExtensionContext } from 'vscode';
 import { initRecentFileHistory } from './recentFileHistory'
 import { getWorkspaceDir, ensureCacheDirSync, log, setLogLevel } from "./constants";
@@ -9,15 +9,14 @@ let isBuildingSearchDatabase: boolean = false;
 
 export function activate(context: ExtensionContext) {
 	const workspaceDir = getWorkspaceDir();
-	log("filepicker: activated for " + workspaceDir);
-	ensureCacheDirSync();
-	initRecentFileHistory();
 	setLogLevel(vscode.workspace.getConfiguration("FilePicker")
 		.get("showDebugLog", "None"));
+	log("filepicker: activated for " + workspaceDir);
 	vscode.workspace.onDidChangeConfiguration((e) => {
 		setLogLevel(vscode.workspace.getConfiguration("FilePicker")
 			.get("showDebugLog", "None"));
 	});
+	initRecentFileHistory();
 
 	context.subscriptions.push(commands.registerCommand('wwm.quickInput', async () => {
 		quickOpen();
@@ -44,7 +43,6 @@ export function activate(context: ExtensionContext) {
 		async (mainUri?: vscode.Uri, allUris?: vscode.Uri[]) => {
 			addExcludeDirs(mapUrisToFilePathes(allUris, mainUri));
 		}));
-	loadSearchDatabaseAsync();
 }
 
 function mapUrisToFilePathes(allUris: vscode.Uri[] | undefined, mainUri: vscode.Uri | undefined) {
