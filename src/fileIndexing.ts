@@ -81,6 +81,7 @@ export async function addExcludeDirs(dirs: string[]) {
     if (!fs.existsSync(getSearchDatabaseFile(getWorkspaceDir()))) {
         log("filepicker: search datababse not exist");
         vscode.window.showInformationMessage("FilePicker: no search database, don't forget to build it later");
+        return;
     }
 
     const myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -147,6 +148,7 @@ export async function cancelExcludeDirs(cancelExcludeDirs: string[]) {
     if (!fs.existsSync(getSearchDatabaseFile(getWorkspaceDir()))) {
         log("filepicker: search datababse not exist");
         vscode.window.showInformationMessage("FilePicker: no search database, don't forget to build it later");
+        return;
     }
 
     const myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);

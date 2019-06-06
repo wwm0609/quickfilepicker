@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
-import { getWorkspaceDir, fuzzy_match_simple, log } from "./constants";
+import { getWorkspaceDir, fuzzy_match_simple, log, logi } from "./constants";
 import { loadSearchDatabaseAsync } from './fileIndexing';
 import { getRecentlyOpenedFileList } from './recentFileHistory'
 
@@ -88,6 +88,10 @@ function prepareCandidates(input: QuickPick<FileItem | MessageItem>, lines: stri
 			}
 			return false;
 		});
+		if (results.length == 0) {
+			logi("filepicker:  no matching result for pattern: " + pattern);
+			results.push(new MessageItem("Opps, no matching result", ""));
+		}
 		input.items = results;
 	}
 	console.timeEnd("filepicker: #prepareCandidates");
