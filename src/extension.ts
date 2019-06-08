@@ -3,12 +3,12 @@ import { quickOpen } from './quickOpen';
 import { buildSearchDatabase, cancelExcludeDirs, addExcludeDirs } from './fileIndexing'
 import { commands, ExtensionContext } from 'vscode';
 import { initRecentFileHistory } from './recentFileHistory'
-import { getWorkspaceDir, ensureCacheDirSync, log, setLogLevel } from "./constants";
+import { getWorkspaceFolder, log, setLogLevel } from "./constants";
 
 let isBuildingSearchDatabase: boolean = false;
 
 export function activate(context: ExtensionContext) {
-	const workspaceDir = getWorkspaceDir();
+	const workspaceDir = getWorkspaceFolder();
 	setLogLevel(vscode.workspace.getConfiguration("FilePicker")
 		.get("showDebugLog", "None"));
 	log("filepicker: activated for " + workspaceDir);
@@ -23,16 +23,16 @@ export function activate(context: ExtensionContext) {
 	}));
 	context.subscriptions.push(commands.registerCommand('wwm.buildFileList', async () => {
 		if (isBuildingSearchDatabase) {
-			vscode.window.showInformationMessage("filepicker: busy now, please try it later");
+			vscode.window.showInformationMessage("Busy now, please try it later");
 			return;
 		}
 		isBuildingSearchDatabase = true;
 		// update status bar every 100 millis
-		var database = await buildSearchDatabase().catch((err) => {
+		await buildSearchDatabase().catch((err) => {
 			isBuildingSearchDatabase = false;
 			log("filepicker: failed to build file list database, " + err);
 		});
-		vscode.window.showInformationMessage("fastpicker: search database created, see " + database);
+		vscode.window.showInformationMessage("Search database created!");
 		isBuildingSearchDatabase = false;
 	}));
 	context.subscriptions.push(commands.registerCommand('wwm.cancelExcludeDir',

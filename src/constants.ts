@@ -15,8 +15,13 @@ const NONE = 6;
 
 var level = NONE;
 
-export function ensureCacheDirSync() {
-    var dir = path.resolve(getWorkspaceDir(), ConfigDir);
+export function getSearchDatabaseFile(workspaceDir: string) {
+    ensureCacheDirSync(workspaceDir);
+    return path.join(workspaceDir, FilePickerSearchtDatabaseFile);
+}
+
+export function ensureCacheDirSync(workspaceFolder?: string) {
+    var dir = path.resolve(workspaceFolder ? workspaceFolder : getWorkspaceFolder(), ConfigDir);
     if (!existsSync(dir)) mkdirSync(dir);
 }
 
@@ -70,17 +75,14 @@ export function loge(message: string) {
 }
 
 
-export function getWorkspaceDirs() {
+export function getWorkspaceFolders() {
     const cwds = vscode.workspace.workspaceFolders ?
         vscode.workspace.workspaceFolders.map(f => f.uri.fsPath) : [process.cwd()];
     return cwds;
 }
 
-
-export function getWorkspaceDir() {
-    const cwds = vscode.workspace.workspaceFolders ?
-        vscode.workspace.workspaceFolders.map(f => f.uri.fsPath) : [process.cwd()];
-    return cwds[0];
+export function getWorkspaceFolder() {
+    return getWorkspaceFolders()[0];
 }
 
 export function fuzzy_match_simple(pattern: string, str: string) {
