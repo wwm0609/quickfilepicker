@@ -3,8 +3,8 @@ import * as vscode from 'vscode';
 import { mkdirSync, existsSync } from 'fs';
 import * as path from 'path';
 export const ConfigDir = "./.q_file_picker/"
-export const FilePickerSearchtDatabaseFile = "./.q_file_picker/quick_open_file_list.db"
-export const FilePickerRecentlyOpenedFileListFile = "./.q_file_picker/quick_open_recently_files.db"
+const FilePickerSearchtDatabaseFile = "./.q_file_picker/quick_open_file_list.db"
+const FilePickerRecentlyOpenedFileListFile = "./.q_file_picker/quick_open_recently_files.db"
 
 const Verbose = 1;
 const Debug = 2;
@@ -18,6 +18,13 @@ var level = NONE;
 export function getSearchDatabaseFile(workspaceDir: string) {
     ensureCacheDirSync(workspaceDir);
     return path.join(workspaceDir, FilePickerSearchtDatabaseFile);
+}
+
+export function getRecentlyOpenedFilelistDatabases() {
+    return getWorkspaceFolders().map(workspaceFolder => {
+        ensureCacheDirSync(workspaceFolder);
+        return path.resolve(workspaceFolder, FilePickerRecentlyOpenedFileListFile);
+    });
 }
 
 export function ensureCacheDirSync(workspaceFolder?: string) {

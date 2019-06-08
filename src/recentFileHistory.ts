@@ -1,9 +1,7 @@
 import * as vscode from 'vscode';
 import readline = require('readline');
-import { FilePickerRecentlyOpenedFileListFile, log, ensureCacheDirSync, getWorkspaceFolders, logw } from "./constants";
+import { log, logw, getRecentlyOpenedFilelistDatabases } from "./constants";
 import fs = require('fs');
-import * as path from 'path';
-
 
 const recentlyOpenedFileList: string[] = []; // act like a LRU cache
 
@@ -60,7 +58,7 @@ function updateRecentlyOpenedFilesList(file: string) {
 function persistRecentlyOpenedFileList() {
     if (!recentOpenedFileListChanged) return;
     recentOpenedFileListChanged = false;
-    getRecentlyOpenedFilelistDatabase().forEach(dbfile => {
+    getRecentlyOpenedFilelistDatabases().forEach(dbfile => {
         const stream = fs.createWriteStream(dbfile);
         stream.write("# Auto generated, please do not modify");
         const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(dbfile));
@@ -80,17 +78,10 @@ function persistRecentlyOpenedFileList() {
     log("filepicker: changes of recently opened file list have been wrote to disk");
 }
 
-function getRecentlyOpenedFilelistDatabase() {
-    return getWorkspaceFolders().map(workspaceFolder => {
-        ensureCacheDirSync(workspaceFolder);
-        return path.resolve(workspaceFolder, FilePickerRecentlyOpenedFileListFile);
-    });
-}
-
 function loadRecentlyOpenedFileListCache() {
     if (recentlyOpenedFileList.length > 0) return recentlyOpenedFileList;
 
-    return Promise.all(getRecentlyOpenedFilelistDatabase().map(file => {
+    return Promise.all(getRecentlyOpenedFilelistDatabases().map(file => {
         return new Promise((resolve, reject) => {
             fs.stat(file, (err, fileStat) => {
                 if (err || !fileStat.isFile()) {

@@ -66,11 +66,6 @@ class MessageItem implements QuickPickItem {
 	}
 }
 
-function isPatternMatch(pattern: string, file: string) {
-	var matched = file.toLowerCase().includes(pattern.toLowerCase());
-	return matched || fuzzy_match_simple(pattern, file);
-}
-
 const NOT_MATCHED = -1;
 const BASE_NAME_MATCHED = 0;
 const BASE_NAME_FUZZY_MATCHED = 1;
