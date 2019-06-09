@@ -37,10 +37,7 @@ Visit https://github.com/wwm0609/quickfilepicker/ and file an issue
 ----------------------------------------------------------------------------
 
 ## TODO
-- follow symbolic links during build search database
-- display file type icon in quick pick view
-- supprot sychronize certain directoies after file changes
-- run tests on windows 
+- test on Windows
 
 ## How To Run Locally
 Clone this project into your local disk and open it in vscode, press F5, there you go!

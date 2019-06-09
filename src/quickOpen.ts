@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
-import { getWorkspaceFolders, fuzzy_match_simple, log } from "./constants";
+import { getWorkspaceFolders, fuzzy_match_simple, log, isUnixLikeSystem } from "./constants";
 import { getFileListOfWorkspaceFolder } from './fileIndexing';
 import { getRecentlyOpenedFileList } from './recentFileHistory'
 import * as vscode from 'vscode';
@@ -14,9 +14,13 @@ import * as vscode from 'vscode';
 export async function quickOpen() {
 	const uri = await pickFile();
 	if (uri) {
-		const document = await workspace.openTextDocument(uri);
-		// todo: handle none text file
-		await window.showTextDocument(document);
+		await workspace.openTextDocument(uri).then((value) => {
+			window.showTextDocument(value);
+		}, (reason) => {
+			log("filepicker: failed to open " + uri + ", error=" + reason);
+			// "_files.windowOpen" seems to be a private command, so we can't use it here 
+			vscode.commands.executeCommand("explorer.openToSide", uri);
+		});
 	}
 }
 
@@ -30,9 +34,9 @@ class FileItem implements QuickPickItem {
 		var abspath = uri.fsPath;
 		var workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
 		if (workspaceFolder) {
-			var name = workspaceFolder.name.toUpperCase();
-			var prefix = "./";
-			return new FileItem(uri, prefix + vscode.workspace.asRelativePath(abspath), name, showFullPathAsDetail);
+			var prefix = isUnixLikeSystem() ? "./":  ""; // if on unix like systems
+			var relativePath = prefix + vscode.workspace.asRelativePath(abspath);
+			return new FileItem(uri, relativePath, showFullPathAsDetail);
 		} else {
 			throw new Error(abspath + " not opened in workspace")
 		}
@@ -47,9 +51,10 @@ class FileItem implements QuickPickItem {
 		return this.fromAbsPath(path.join(workspaceFolder, relative_path), showFullPathAsDetail);
 	}
 
-	private constructor(uri: Uri, relative_path: string, workspaceFolderName: string, showFullPathAsDetail?: boolean) {
-		this.label = path.basename(uri.fsPath) + " (" + relative_path + ")";
-		this.description = workspaceFolderName;
+	private constructor(uri: Uri, relative_path: string, showFullPathAsDetail?: boolean) {
+		// show file icon? but no api available yet
+		this.label = path.basename(uri.fsPath);
+		this.description = relative_path;
 		this.uri = uri;
 		this.detail = showFullPathAsDetail ? uri.fsPath : "";
 	}
@@ -77,7 +82,7 @@ function checkIfPatternMatch(pattern: string/* lower case */, file: string, work
 	if (basename.includes(pattern)) return BASE_NAME_MATCHED;
 	if (fuzzy_match_simple(pattern, basename)) return BASE_NAME_FUZZY_MATCHED;
 
-	var relativePath = file.replace(workpaceFolderPath, "").toLowerCase();
+	var relativePath = vscode.workspace.asRelativePath(file).toLowerCase();
 	if (relativePath.includes(pattern)) return DIR_PATH_MATCHED;
 
 	if (file.toLowerCase().includes(pattern.toLowerCase())) return PATH_MATCHED;

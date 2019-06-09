@@ -1,11 +1,10 @@
 import fs = require('fs');
-import { getWorkspaceFolder, getWorkspaceFolders, log, logv, getSearchDatabaseFile } from "./constants";
+import { getWorkspaceFolder, getWorkspaceFolders, log, logv, getSearchDatabaseFile, logw, loge } from "./constants";
 import readline = require('readline');
 import * as path from 'path';
-import { promisify } from 'util';
-const readdir = promisify(fs.readdir);
-const lstat = promisify(fs.lstat);
 import * as vscode from 'vscode';
+import readdirp = require('readdirp');
+
 
 const fileListMap: Map<string, string[]> = new Map();
 
@@ -370,29 +369,19 @@ function shouldSkipFolder(dir: string/*abs path*/, name: string /*dir name*/, fi
     return false;
 }
 
-function shouldSkipFile(name: string, filters: string[] /*abs path*/) {
+function shouldSkipFile(name: string, filters?: string[] /*abs path*/) {
     return name.charAt(0) == '.';
 }
 
 //  filters: string[] /* files in these folers will be indexed */
-async function walkFileTree(dir: string, filters: string[], onNewFile: any) {
-    const subdirs = await readdir(dir);
-    await Promise.all(subdirs.map(async (name: string) => {
-        const abs_file = path.join(dir, name);
-        var fileStat = await lstat(abs_file);
-        if (fileStat.isFile()) {
-            if (!shouldSkipFile(name, [])) {
-                onNewFile(abs_file);
-            }
-        } else if (fileStat.isSymbolicLink()) {
-            // TODO: follow link?
-        } else if (fileStat.isDirectory()) {
-            if (!shouldSkipFolder(abs_file, name, filters)) {
-                return walkFileTree(abs_file, filters, onNewFile);
-            }
-            // log("filepicker: skip indexing " + abs_file)
-        }
-        return ""
-    }));
-    return "";
+function walkFileTree(dir: string, filters: string[], onNewFile: any) {
+    return new Promise((resolve, reject) => {
+        readdirp(dir, {
+            fileFilter: (entry: any) => !shouldSkipFile(path.basename(entry.basename)),
+            directoryFilter: (entry: any) => !shouldSkipFolder(entry.fullPath, entry.basename, filters),
+        }).on('data', (entry: any) => onNewFile(entry.fullPath))
+            .on('warn', (error: any) => logw('filepicker: ' + error))
+            .on('error', (error: any) => loge('filepicker: ' + error))
+            .on('end', () => resolve());
+    });
 }

@@ -5,6 +5,7 @@ import { commands, ExtensionContext } from 'vscode';
 import { initRecentFileHistory } from './recentFileHistory'
 import { getWorkspaceFolder, log, setLogLevel } from "./constants";
 
+
 let isBuildingSearchDatabase: boolean = false;
 
 export function activate(context: ExtensionContext) {

@@ -15,6 +15,16 @@ const NONE = 6;
 
 var level = NONE;
 
+var unixLike = -1;
+
+export function isUnixLikeSystem() {
+    if (unixLike == -1) {
+        var dir = getWorkspaceFolder();
+        unixLike = dir.startsWith("/") ? 1 : 0;
+    }
+    return unixLike == 1;
+}
+
 export function getSearchDatabaseFile(workspaceDir: string) {
     ensureCacheDirSync(workspaceDir);
     return path.join(workspaceDir, FilePickerSearchtDatabaseFile);
@@ -71,13 +81,13 @@ export function logi(message: string) {
 
 export function logw(message: string) {
     if (Warning >= level) {
-        console.log(message);
+        console.warn(message);
     }
 }
 
 export function loge(message: string) {
     if (Error >= level) {
-        console.log(message);
+        console.error(message);
     }
 }
 

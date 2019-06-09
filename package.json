@@ -53,13 +53,13 @@
           "type": "string",
           "default": "None",
           "enum": [
-						"None",
-						"Verbose",
-						"Debug",
-						"Info",
-						"Warning",
-						"Error"
-					]
+            "None",
+            "Verbose",
+            "Debug",
+            "Info",
+            "Warning",
+            "Error"
+          ]
         }
       }
     },
@@ -94,5 +94,7 @@
     "type": "git",
     "url": "https://github.com/wwm0609/quickfilepicker"
   },
-  "dependencies": {}
+  "dependencies": {
+    "readdirp": "^3.0.2"
+  }
 }
