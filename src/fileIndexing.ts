@@ -96,6 +96,7 @@ export async function addExcludeDirs(dirs: string[]) {
 
     if (newExcludeDirs.length == 0) {
         log("filepicker: already excluded: " + dirs);
+        vscode.window.showInformationMessage("Already excluded: " + dirs)
         return;
     }
 
@@ -121,23 +122,23 @@ export async function addExcludeDirs(dirs: string[]) {
     const myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     myStatusBarItem.text = `filepicker: exclude|0`;
     myStatusBarItem.show();
-    var count = 0
     // update files list: remove excluded files
     await Promise.all(newExcludeDirs.map((dir) => {
         var workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(dir));
         const workspaceDir = workspaceFolder ? workspaceFolder.uri.fsPath : "";
+        if (workspaceDir.length == 0) return;
         const fileList = _getFileListOfWorkspaceFolder(workspaceDir);
-        return walkFileTree(dir, currentExcludeDirs, (abs_path: string) => {
-            const file = abs_path;
-            logv("filepicker: remove " + file);
-            // todo: indexof is expensive
-            var index = fileList.indexOf(file);
-            if (index >= 0) {
-                myStatusBarItem.text = `filepicker: exclude|` + (++count);
-                myStatusBarItem.show();
-                fileList.splice(index, 1);
+        var index = fileList.length;
+        var deleteCount = 0;
+        while (--index > 0) {
+            if (fileList[index].startsWith(dir)) {
+                deleteCount++;
+                continue;
             }
-        });
+
+            if (deleteCount > 0) fileList.splice(index+1, deleteCount);
+            deleteCount = 0;
+        }
     }));
     myStatusBarItem.hide();
     log("filepicker: #addExcludeDirs, just excluded " + newExcludeDirs);
