@@ -13,6 +13,19 @@ export async function getRecentlyOpenedFileList() {
 // flag to rewrite cache
 var recentOpenedFileListChanged = false;
 
+export function removeFileFromHistory(file: string) {
+    var index = recentlyOpenedFileList.indexOf(file);
+    // the param file was already at the head of this LRU
+    if (index < 0) {
+        return;
+    }
+
+    logv("filepicker: " + file + " was removed from history");
+    recentlyOpenedFileList.splice(index, 1);
+    recentOpenedFileListChanged = true;
+    setTimeout(persistRecentlyOpenedFileList, 5000);
+}
+
 export async function initRecentFileHistory() {
     vscode.window.onDidChangeActiveTextEditor((editor) => {
         var textEditor = editor ? editor : vscode.window.activeTextEditor;
@@ -26,7 +39,8 @@ export async function initRecentFileHistory() {
                     log("filepicker: " + file + " not exist on disk");
                     return;
                 }
-                recentOpenedFileListChanged = updateRecentlyOpenedFilesList(file) || recentOpenedFileListChanged;
+                recentOpenedFileListChanged = updateRecentlyOpenedFilesList(file)
+                        || recentOpenedFileListChanged;
                 if (recentOpenedFileListChanged) {
                     setTimeout(persistRecentlyOpenedFileList, 5000);
                 }

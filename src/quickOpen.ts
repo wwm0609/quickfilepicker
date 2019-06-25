@@ -2,8 +2,9 @@ import * as path from 'path';
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
 import { getWorkspaceFolders, fuzzy_match_simple, log, isUnixLikeSystem, logw, logd } from "./constants";
 import { getFileListOfWorkspaceFolder } from './fileIndexing';
-import { getRecentlyOpenedFileList } from './recentFileHistory'
+import { getRecentlyOpenedFileList, removeFileFromHistory } from './recentFileHistory'
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 
 /**
  * A file opener using window.createQuickPick().
@@ -18,8 +19,15 @@ export async function quickOpen() {
 			window.showTextDocument(value);
 		}, (reason) => {
 			log("filepicker: failed to open " + uri + ", error=" + reason);
-			// "_files.windowOpen" seems to be a private command, so we can't use it here 
-			vscode.commands.executeCommand("explorer.openToSide", uri);
+			fs.exists(uri.fsPath, (exists) => {
+				if (!exists) {
+					removeFileFromHistory(uri.fsPath);
+					return;
+				}
+				// "_files.windowOpen" seems to be private;
+				// use explorer.openToSide to open a none text file
+				vscode.commands.executeCommand("explorer.openToSide", uri);
+			});
 		});
 	}
 }
