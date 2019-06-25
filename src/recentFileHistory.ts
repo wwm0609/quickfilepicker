@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import readline = require('readline');
-import { log, logw, getRecentlyOpenedFilelistDatabases } from "./constants";
+import { log, logw, getRecentlyOpenedFilelistDatabases, logd, logv } from "./constants";
 import fs = require('fs');
 
 const recentlyOpenedFileList: string[] = []; // act like a LRU cache
@@ -13,29 +13,33 @@ export async function getRecentlyOpenedFileList() {
 // flag to rewrite cache
 var recentOpenedFileListChanged = false;
 
-export function initRecentFileHistory() {
-    // flush changes every 10 sec
-    setInterval(persistRecentlyOpenedFileList, 10000);
-    var editor = vscode.window.activeTextEditor;
-    if (editor) {
-        var file = editor.document.uri.fsPath;
-        updateRecentlyOpenedFilesList(file);
-    }
-
+export async function initRecentFileHistory() {
     vscode.window.onDidChangeActiveTextEditor((editor) => {
         var textEditor = editor ? editor : vscode.window.activeTextEditor;
         if (!textEditor) {
             return;
         }
-        var file = textEditor.document.uri.fsPath;
-        fs.exists(file, (exists) => {
-            if (!exists) {
-                log("filepicker: " + file + " not exist on disk");
-                return;
-            }
-            recentOpenedFileListChanged = updateRecentlyOpenedFilesList(file) || recentOpenedFileListChanged;
+        const file = textEditor.document.uri.fsPath;
+        loadRecentlyOpenedFileListCache().then(() => {
+            fs.exists(file, (exists) => {
+                if (!exists) {
+                    log("filepicker: " + file + " not exist on disk");
+                    return;
+                }
+                recentOpenedFileListChanged = updateRecentlyOpenedFilesList(file) || recentOpenedFileListChanged;
+                if (recentOpenedFileListChanged) {
+                    setTimeout(persistRecentlyOpenedFileList, 5000);
+                }
+            });
         });
     });
+    var editor = vscode.window.activeTextEditor;
+    if (editor) {
+        const file = editor.document.uri.fsPath;
+        loadRecentlyOpenedFileListCache().then(() => {
+            updateRecentlyOpenedFilesList(file);
+        });
+    }
 }
 
 function updateRecentlyOpenedFilesList(file: string) {
@@ -45,7 +49,7 @@ function updateRecentlyOpenedFilesList(file: string) {
         return false;
     }
 
-    log("filepicker: just opened " + file);
+    logv("filepicker: " + file + " was opened");
     if (index > 0) recentlyOpenedFileList.splice(index, 1);
     recentlyOpenedFileList.unshift(file);
     const max_count = 50; /* keep track of this amount of most recently opened files */
@@ -78,10 +82,11 @@ function persistRecentlyOpenedFileList() {
     log("filepicker: changes of recently opened file list have been wrote to disk");
 }
 
-function loadRecentlyOpenedFileListCache() {
-    if (recentlyOpenedFileList.length > 0) return recentlyOpenedFileList;
 
-    return Promise.all(getRecentlyOpenedFilelistDatabases().map(file => {
+var fileListLoadedPromise:Promise<any>;
+function loadRecentlyOpenedFileListCache() {
+    if (fileListLoadedPromise) return fileListLoadedPromise;
+    fileListLoadedPromise =  Promise.all(getRecentlyOpenedFilelistDatabases().map(file => {
         return new Promise((resolve, reject) => {
             fs.stat(file, (err, fileStat) => {
                 if (err || !fileStat.isFile()) {
@@ -89,8 +94,7 @@ function loadRecentlyOpenedFileListCache() {
                     resolve();
                     return;
                 }
-                log("filepicker: begin loadRecentlyOpenedFileListCache");
-                log("filepicker: load recently opened file list cache");
+                logd("filepicker: load recently opened file list cache");
                 const readInterface = readline.createInterface({
                     input: fs.createReadStream(file),
                     output: process.stdout,
@@ -102,11 +106,10 @@ function loadRecentlyOpenedFileListCache() {
                 });
                 readInterface.on('close', () => {
                     resolve();
-                    log("filepicker: begin loadRecentlyOpenedFileListCache");
+                    log("filepicker: recently opened file list loaded");
                 });
             });
         });
     }))
-
-
+    return fileListLoadedPromise;
 }

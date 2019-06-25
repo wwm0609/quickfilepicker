@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
-import { getWorkspaceFolders, fuzzy_match_simple, log, isUnixLikeSystem } from "./constants";
+import { getWorkspaceFolders, fuzzy_match_simple, log, isUnixLikeSystem, logw, logd } from "./constants";
 import { getFileListOfWorkspaceFolder } from './fileIndexing';
 import { getRecentlyOpenedFileList } from './recentFileHistory'
 import * as vscode from 'vscode';
@@ -33,13 +33,12 @@ class FileItem implements QuickPickItem {
 	static fromUri(uri: Uri, showFullPathAsDetail?: boolean) {
 		var abspath = uri.fsPath;
 		var workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-		if (workspaceFolder) {
-			var prefix = isUnixLikeSystem() ? "./":  ""; // if on unix like systems
-			var relativePath = prefix + vscode.workspace.asRelativePath(abspath);
-			return new FileItem(uri, relativePath, showFullPathAsDetail);
-		} else {
-			throw new Error(abspath + " not opened in workspace")
+		if (!workspaceFolder) {
+			logw("filepicker: " + abspath + " not opened in workspace")
 		}
+		var prefix = isUnixLikeSystem() ? "./":  ""; // if on unix like systems
+		var relativePath = prefix + vscode.workspace.asRelativePath(abspath);
+		return new FileItem(uri, relativePath, showFullPathAsDetail);
 	}
 
 	static fromAbsPath(abspath: string, showFullPathAsDetail?: boolean) {
@@ -98,21 +97,21 @@ async function showSearchResults(input: QuickPick<FileItem | MessageItem>, value
 	}
 
 	input.busy = true;
+	console.time("filepicker#prepareCandidates");
 	await findCandidates(input, value);
+	console.timeEnd("filepicker#prepareCandidates");
 	input.busy = false;
 }
 
 // todo: support showing icons of different file types
 async function findCandidates(input: QuickPick<FileItem | MessageItem>, pattern: string) {
-	console.time("filepicker#prepareCandidates");
-	for (const workspaceFolder of getWorkspaceFolders()) {
-		// 1. relative path, e.g ./hello/world.h
-		// 2. absolute path  e.g. /project/hello/world.h
-		let thisPattern =
-			pattern.startsWith("./") ? pattern = pattern.substring(2) : pattern;
-		await findCandidatesInWorkspaceFolder(thisPattern.toLowerCase(), workspaceFolder, input);
-	}
-	console.timeEnd("filepicker#prepareCandidates");
+	// 1. relative path, e.g ./hello/world.h
+	// 2. absolute path  e.g. /project/hello/world.h
+	let thisPattern =
+		pattern.startsWith("./") ? pattern = pattern.substring(2) : pattern;
+	return Promise.all(getWorkspaceFolders().map(workspaceFolder => {
+		return findCandidatesInWorkspaceFolder(thisPattern.toLowerCase(), workspaceFolder, input)
+	}));
 }
 
 async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder: string,
@@ -159,13 +158,13 @@ async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder:
 		}
 		return false;
 	});
-	input.items = input.items.concat(results.concat(fuzzyMatchedResults));
-	if (input.items.length == 0) {
-		log("filepicker:  no matching result for pattern: " + pattern);
+	if (input.items.length + results.length == 0) {
+		logd("filepicker:  no matching result for pattern: " + pattern);
 		results.push(new MessageItem("Opps, no matching result", ""));
 	} else {
 		log("filepicker: found " + input.items.length + " matched results");
 	}
+	input.items = input.items.concat(results).concat(fuzzyMatchedResults);
 }
 
 async function pickFile() {
