@@ -2,7 +2,7 @@
   "name": "file-searcher",
   "displayName": "Fast File Picker",
   "description": "Searching files on the fly",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "wwm0609",
   "engines": {
     "vscode": "^1.32.0"

@@ -2,9 +2,10 @@
 import * as vscode from 'vscode';
 import { mkdirSync, existsSync } from 'fs';
 import * as path from 'path';
-export const ConfigDir = "./.q_file_picker/"
-const FilePickerSearchtDatabaseFile = "./.q_file_picker/quick_open_file_list.db"
-const FilePickerRecentlyOpenedFileListFile = "./.q_file_picker/quick_open_recently_files.db"
+const homedir = require('os').homedir();
+export const ConfigDir = path.join(homedir, ".q_file_picker")
+const crypto = require('crypto');
+
 
 const Verbose = 1;
 const Debug = 2;
@@ -14,8 +15,44 @@ const Error = 5;
 const NONE = 6;
 
 var level = NONE;
-
 var unixLike = -1;
+
+var workSpaceToConfigDirMap = new Map()
+
+export function getWorkspaceFolderOfRecentFileDatabase(databaseFile: string) {
+    for (let [workSpaceFolder, configDir] of workSpaceToConfigDirMap) {
+        if (databaseFile.startsWith(configDir)) {
+            return workSpaceFolder;
+        }
+    }
+    return null;
+}
+
+function getDatabaseDir(workspaceDir: string) {
+    var workdir = workspaceDir ? workspaceDir : getWorkspaceFolder();
+    if (workSpaceToConfigDirMap.has(workdir)) {
+        return workSpaceToConfigDirMap.get(workdir);
+    }
+    const md5 = crypto.createHash('md5');
+    var dir = path.join(ConfigDir, md5.update(workdir).digest('hex'));
+    logd("map workspaceDir " + workdir + " to " + dir);
+    if (!existsSync(dir)) {
+        if (!existsSync(ConfigDir)) {
+            mkdirSync(ConfigDir);
+        }
+        mkdirSync(dir);
+    }
+    workSpaceToConfigDirMap.set(workdir, dir);
+    return dir;
+}
+
+function getFileIndexDatabasePath(workspaceDir: string) {
+    return path.join(getDatabaseDir(workspaceDir), "file_index.db")
+}
+
+function getRecentlyFilesDatabasePath(workspaceDir: string) {
+    return path.join(getDatabaseDir(workspaceDir), "recently_files.db")
+}
 
 export function isUnixLikeSystem() {
     if (unixLike == -1) {
@@ -26,20 +63,13 @@ export function isUnixLikeSystem() {
 }
 
 export function getSearchDatabaseFile(workspaceDir: string) {
-    ensureCacheDirSync(workspaceDir);
-    return path.join(workspaceDir, FilePickerSearchtDatabaseFile);
+    return getFileIndexDatabasePath(workspaceDir);
 }
 
 export function getRecentlyOpenedFilelistDatabases() {
     return getWorkspaceFolders().map(workspaceFolder => {
-        ensureCacheDirSync(workspaceFolder);
-        return path.resolve(workspaceFolder, FilePickerRecentlyOpenedFileListFile);
+        return getRecentlyFilesDatabasePath(workspaceFolder);
     });
-}
-
-export function ensureCacheDirSync(workspaceFolder?: string) {
-    var dir = path.resolve(workspaceFolder ? workspaceFolder : getWorkspaceFolder(), ConfigDir);
-    if (!existsSync(dir)) mkdirSync(dir);
 }
 
 export function setLogLevel(new_level: string) {

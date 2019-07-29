@@ -166,7 +166,7 @@ async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder:
 		}
 		return false;
 	});
-	if (input.items.length + results.length == 0) {
+	if ((input.items.length + results.length) == 0) {
 		logd("filepicker:  no matching result for pattern: " + pattern);
 		results.push(new MessageItem("Opps, no matching result", ""));
 	} else {

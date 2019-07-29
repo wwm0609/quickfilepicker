@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import readline = require('readline');
-import { log, logw, getRecentlyOpenedFilelistDatabases, logd, logv } from "./constants";
+import { log, logw, getRecentlyOpenedFilelistDatabases, logd, logv, getWorkspaceFolderOfRecentFileDatabase } from "./constants";
 import fs = require('fs');
 
 const recentlyOpenedFileList: string[] = []; // act like a LRU cache
@@ -23,7 +23,7 @@ export function removeFileFromHistory(file: string) {
     logv("filepicker: " + file + " was removed from history");
     recentlyOpenedFileList.splice(index, 1);
     recentOpenedFileListChanged = true;
-    setTimeout(persistRecentlyOpenedFileList, 5000);
+    setTimeout(persistRecentlyOpenedFileList, 1000);
 }
 
 export async function initRecentFileHistory() {
@@ -42,7 +42,7 @@ export async function initRecentFileHistory() {
                 recentOpenedFileListChanged = updateRecentlyOpenedFilesList(file)
                         || recentOpenedFileListChanged;
                 if (recentOpenedFileListChanged) {
-                    setTimeout(persistRecentlyOpenedFileList, 5000);
+                    setTimeout(persistRecentlyOpenedFileList, 1000);
                 }
             });
         });
@@ -79,15 +79,14 @@ function persistRecentlyOpenedFileList() {
     getRecentlyOpenedFilelistDatabases().forEach(dbfile => {
         const stream = fs.createWriteStream(dbfile);
         stream.write("# Auto generated, please do not modify");
-        const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(dbfile));
+        const workspaceFolder = getWorkspaceFolderOfRecentFileDatabase(dbfile);
         if (!workspaceFolder) {
             logw("filepicker: con't find workspace folder for recently opened file list database: " + dbfile);
             return;
         }
-        const workspaceFolderPath = workspaceFolder.uri.fsPath;
         stream.write("# auto generated file, used to cache recently opened files\n");
         recentlyOpenedFileList.forEach((file) => {
-            if (file.startsWith(workspaceFolderPath)) {
+            if (file.startsWith(workspaceFolder)) {
                 stream.write(file + '\n');
             }
         });
@@ -104,11 +103,11 @@ function loadRecentlyOpenedFileListCache() {
         return new Promise((resolve, reject) => {
             fs.stat(file, (err, fileStat) => {
                 if (err || !fileStat.isFile()) {
-                    log("filepicker: recently opened file cache not exist");
+                    log("filepicker: recently opened files db not exist");
                     resolve();
                     return;
                 }
-                logd("filepicker: load recently opened file list cache");
+                logd("filepicker: load recently opened file list db");
                 const readInterface = readline.createInterface({
                     input: fs.createReadStream(file),
                     output: process.stdout,

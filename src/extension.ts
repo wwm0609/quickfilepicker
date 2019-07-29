@@ -20,7 +20,7 @@ export function activate(context: ExtensionContext) {
 	initRecentFileHistory();
 
 	context.subscriptions.push(commands.registerCommand('wwm.quickInput', async () => {
-		quickOpen();
+		 quickOpen();
 	}));
 	context.subscriptions.push(commands.registerCommand('wwm.buildFileList', async () => {
 		if (isBuildingSearchDatabase) {
