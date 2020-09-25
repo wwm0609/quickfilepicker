@@ -15,6 +15,7 @@ import * as fs from 'fs';
 export async function quickOpen() {
 	const uri = await pickFile();
 	if (uri) {
+		log("filepicker: opening " + uri);
 		await workspace.openTextDocument(uri).then((value) => {
 			window.showTextDocument(value);
 		}, (reason) => {
@@ -151,28 +152,29 @@ async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder:
 		if (matched == NOT_MATCHED) {
 			return false;
 		}
-
-		if (matched == BASE_NAME_FUZZY_MATCHED && fuzzyMatchedResults.length < 100) {
+		if (matched == BASE_NAME_FUZZY_MATCHED) {
 			fuzzyMatchedResults.push(FileItem.fromAbsPath(file));
 			return false;
 		}
-
-		results.push(FileItem.fromAbsPath(file, matched == PATH_MATCHED));
-
+		results.push(FileItem.fromAbsPath(file, matched == PATH_MATCHED /* show full path */));
 		// don't keep the user waiting, show the results that we already have found
-		if (results.length >= 25) {
-			input.items = input.items.concat(results);
-			results = [];
+		if (input.items.length == 0 && results.length >= 10) {
+			input.items = input.items.concat(results).concat(fuzzyMatchedResults);
+			results = []
+			fuzzyMatchedResults = []
+		}
+		if (results.length  >= 15) {
+			return true; // abort the Array.some() loop
 		}
 		return false;
 	});
-	if ((input.items.length + results.length) == 0) {
+	input.items = input.items.concat(results.concat(fuzzyMatchedResults));
+	if (results.length == 0) {
 		logd("filepicker:  no matching result for pattern: " + pattern);
-		results.push(new MessageItem("Opps, no matching result", ""));
+		input.items = input.items.concat(new MessageItem("Opps, nothing matched", ""));
 	} else {
-		log("filepicker: found " + input.items.length + " matched results");
+		logd("filepicker: found " + input.items.length + " matching results totaly");
 	}
-	input.items = input.items.concat(results).concat(fuzzyMatchedResults);
 }
 
 async function pickFile() {
@@ -180,6 +182,7 @@ async function pickFile() {
 	try {
 		return await new Promise<Uri | undefined>((resolve, reject) => {
 			const input = window.createQuickPick<FileItem | MessageItem>();
+			// input.ignoreFocusOut = true
 			input.matchOnDescription = true;
 			input.matchOnDetail = true;
 			const timeoutObjs: any[] = []

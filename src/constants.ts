@@ -4,8 +4,6 @@ import { mkdirSync, existsSync } from 'fs';
 import * as path from 'path';
 const homedir = require('os').homedir();
 export const ConfigDir = path.join(homedir, ".q_file_picker")
-const crypto = require('crypto');
-
 
 const Verbose = 1;
 const Debug = 2;
@@ -33,8 +31,8 @@ function getDatabaseDir(workspaceDir: string) {
     if (workSpaceToConfigDirMap.has(workdir)) {
         return workSpaceToConfigDirMap.get(workdir);
     }
-    const md5 = crypto.createHash('md5');
-    var dir = path.join(ConfigDir, md5.update(workdir).digest('hex'));
+    // replace path seperator of unix and window styles to '@'
+    var dir = path.join(ConfigDir, workdir.replace(/\//g, "@").replace(/\\/g, "@"));
     logd("map workspaceDir " + workdir + " to " + dir);
     if (!existsSync(dir)) {
         if (!existsSync(ConfigDir)) {

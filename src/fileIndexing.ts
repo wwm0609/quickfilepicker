@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import readdirp = require('readdirp');
 
 
+
 const fileListMap: Map<string, string[]> = new Map();
 
 const HEADLINE = "# Auto generated, please don't modify it directly\n"
