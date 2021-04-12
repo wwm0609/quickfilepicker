@@ -131,18 +131,5 @@ export function getWorkspaceFolder() {
 }
 
 export function fuzzy_match_simple(pattern: string, str: string) {
-    var patternIdx = 0;
-    var strIdx = 0;
-    var patternLength = pattern.length;
-    var strLength = str.length;
-
-    while (patternIdx != patternLength && strIdx != strLength) {
-        var patternChar = pattern.charAt(patternIdx);
-        var strChar = str.charAt(strIdx);
-        if (patternChar == strChar)
-            ++patternIdx;
-        ++strIdx;
-    }
-
-    return patternLength != 0 && strLength != 0 && patternIdx == patternLength ? true : false;
+    return false
 }

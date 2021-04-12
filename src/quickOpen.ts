@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
-import { getWorkspaceFolders, fuzzy_match_simple, log, isUnixLikeSystem, logw, logd } from "./constants";
+import { getWorkspaceFolders, log, isUnixLikeSystem, logw, logd } from "./constants";
 import { getFileListOfWorkspaceFolder } from './fileIndexing';
 import { getRecentlyOpenedFileList, removeFileFromHistory } from './recentFileHistory'
 import * as vscode from 'vscode';
@@ -80,20 +80,19 @@ class MessageItem implements QuickPickItem {
 }
 
 const NOT_MATCHED = -1;
-const BASE_NAME_MATCHED = 0;
-const BASE_NAME_FUZZY_MATCHED = 1;
-const DIR_PATH_MATCHED = 2;
+// const BASE_NAME_MATCHED = 0;
+// const BASE_NAME_FUZZY_MATCHED = 1;
+// const DIR_PATH_MATCHED = 2;
 const PATH_MATCHED = 3;
 
 function checkIfPatternMatch(pattern: string/* lower case */, file: string, workpaceFolderPath: string) {
-	var basename = path.basename(file).toLowerCase();
-	if (basename.includes(pattern)) return BASE_NAME_MATCHED;
-	if (fuzzy_match_simple(pattern, basename)) return BASE_NAME_FUZZY_MATCHED;
+	if (file.includes(pattern)) return PATH_MATCHED;
+	// if (fuzzy_match_simple(pattern, basename)) return BASE_NAME_FUZZY_MATCHED;
 
-	var relativePath = vscode.workspace.asRelativePath(file).toLowerCase();
-	if (relativePath.includes(pattern)) return DIR_PATH_MATCHED;
+	// var relativePath = vscode.workspace.asRelativePath(file).toLowerCase();
+	// if (relativePath.includes(pattern)) return DIR_PATH_MATCHED;
 
-	if (file.toLowerCase().includes(pattern.toLowerCase())) return PATH_MATCHED;
+	if (file.toLowerCase().includes(pattern)) return PATH_MATCHED;
 
 	return NOT_MATCHED;
 }
@@ -118,13 +117,14 @@ async function findCandidates(input: QuickPick<FileItem | MessageItem>, pattern:
 	// 2. absolute path  e.g. /project/hello/world.h
 	let thisPattern =
 		pattern.startsWith("./") ? pattern = pattern.substring(2) : pattern;
-	return Promise.all(getWorkspaceFolders().map(workspaceFolder => {
-		return findCandidatesInWorkspaceFolder(thisPattern.toLowerCase(), workspaceFolder, input)
+	let workspaces = getWorkspaceFolders();
+	return Promise.all(workspaces.map(workspaceFolder => {
+		return findCandidatesInWorkspaceFolder(thisPattern.toLowerCase(), workspaceFolder, input, workspaces.length > 1)
 	}));
 }
 
 async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder: string,
-	input: QuickPick<MessageItem | FileItem>) {
+	input: QuickPick<MessageItem | FileItem>, multipleWorkspaces: boolean) {
 	log("filepicker: #prepareCandidates, pattern: " + pattern + ", workspace folder: " + workspaceFolder);
 	var fileList = await getFileListOfWorkspaceFolder(workspaceFolder);
 	// input.items = (await getRecentlyOpenedFileList())
@@ -152,11 +152,11 @@ async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder:
 		if (matched == NOT_MATCHED) {
 			return false;
 		}
-		if (matched == BASE_NAME_FUZZY_MATCHED) {
-			fuzzyMatchedResults.push(FileItem.fromAbsPath(file));
-			return false;
-		}
-		results.push(FileItem.fromAbsPath(file, matched == PATH_MATCHED /* show full path */));
+		// if (matched == BASE_NAME_FUZZY_MATCHED) {
+		// 	fuzzyMatchedResults.push(FileItem.fromAbsPath(file));
+		// 	return false;
+		// }
+		results.push(FileItem.fromAbsPath(file, multipleWorkspaces));
 		// don't keep the user waiting, show the results that we already have found
 		if (input.items.length == 0 && results.length >= 10) {
 			input.items = input.items.concat(results).concat(fuzzyMatchedResults);
