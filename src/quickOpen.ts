@@ -94,6 +94,16 @@ const NOT_MATCHED = -1;
 const BASE_NAME_MATCHED = 0;
 const SHORT_BASE_NAME_MATCHED = 1;
 
+// Monotonic counter; every new keystroke bumps it. Search loops compare their
+// captured value against the live counter at yield points and abort early when
+// they no longer represent the latest input.
+let activeSearchSeq = 0;
+const YIELD_EVERY = 2000;
+
+function yieldToEventLoop() {
+	return new Promise<void>(resolve => setImmediate(resolve));
+}
+
 function checkIfPatternMatch(pattern: string, patternInLowerCase: string/* lower case */, file: IndexedFile, workpaceFolderPath: string) {
 	if (file.basenameLower.includes(patternInLowerCase)) {
 		return BASE_NAME_MATCHED;
@@ -108,7 +118,7 @@ function checkIfPatternMatch(pattern: string, patternInLowerCase: string/* lower
 	return NOT_MATCHED;
 }
 
-async function showSearchResults(input: QuickPick<FileItem | MessageItem>, value: string) {
+async function showSearchResults(input: QuickPick<FileItem | MessageItem>, value: string, seq: number) {
 	input.items = [];
 	if (!value) {
 		showRentlyFiles(input);
@@ -116,37 +126,38 @@ async function showSearchResults(input: QuickPick<FileItem | MessageItem>, value
 	}
 
 	input.busy = true;
-	await findCandidates(input, value);
-	input.busy = false;
+	await findCandidates(input, value, seq);
+	if (seq === activeSearchSeq) {
+		input.busy = false;
+	}
 }
 
 // todo: support showing icons of different file types
-async function findCandidates(input: QuickPick<FileItem | MessageItem>, pattern: string) {
+async function findCandidates(input: QuickPick<FileItem | MessageItem>, pattern: string, seq: number) {
 	// 1. relative path, e.g ./hello/world.h
 	// 2. absolute path  e.g. /project/hello/world.h
 	let thisPattern =
 		pattern.startsWith("./") ? pattern = pattern.substring(2) : pattern;
 	let workspaces = getWorkspaceFolders();
 	return Promise.all(workspaces.map(workspaceFolder => {
-		return findCandidatesInWorkspaceFolder(thisPattern, workspaceFolder, input, workspaces.length > 1)
+		return findCandidatesInWorkspaceFolder(thisPattern, workspaceFolder, input, workspaces.length > 1, seq)
 	}));
 }
 
 async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder: string,
-	input: QuickPick<MessageItem | FileItem>, multipleWorkspaces: boolean) {
+	input: QuickPick<MessageItem | FileItem>, multipleWorkspaces: boolean, seq: number) {
 	log("#prepareCandidates, pattern: " + pattern + ", workspace folder: " + workspaceFolder);
 
 	var abs_file_path = path.join(workspaceFolder, pattern);
 	if (fs.existsSync(abs_file_path)) {
+		if (seq !== activeSearchSeq) return;
 		var item = FileItem.fromAbsPath(abs_file_path, multipleWorkspaces);
 		input.items = [item];
 		return;
 	}
 
 	var fileList = await getFileListOfWorkspaceFolder(workspaceFolder);
-	// input.items = (await getRecentlyOpenedFileList())
-	// 	.filter(file => isPatternMatch(pattern, file))
-	// 	.map(file => FileItem.fromUri(Uri.file(file)));
+	if (seq !== activeSearchSeq) return;
 	if (fileList.length == 0) {
 		input.items = input.items.concat([
 			new MessageItem("Did you forget building search database?",
@@ -160,16 +171,29 @@ async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder:
 	var results: (FileItem | MessageItem)[] = [];
 	var fuzzyMatchedResults: (FileItem | MessageItem)[] = []
 	var patternInLowerCase = pattern.toLowerCase()
-	fileList.some((file, index) => {
+	const total = fileList.length;
+	for (var index = 0; index < total; index++) {
+		// Yield to the event loop periodically and bail out if a newer search
+		// has started in the meantime.
+		if (index > 0 && (index % YIELD_EVERY) == 0) {
+			await yieldToEventLoop();
+			if (seq !== activeSearchSeq) {
+				log("search canceled for pattern: " + pattern);
+				console.timeEnd("filepicker#findCandidatesInWorkspaceFolder");
+				return;
+			}
+		}
+
 		// todo: paging?
 		if (input.items.length >= 300) {
 			log("too many search results for pattern:" + pattern + ", please narrow down the pattern");
-			return true; // abort the Array.some() loop
+			break;
 		}
 
+		const file = fileList[index];
 		const matched = checkIfPatternMatch(pattern, patternInLowerCase, file, workspaceFolder);
 		if (matched == NOT_MATCHED) {
-			return false;
+			continue;
 		}
 		var item = FileItem.fromAbsPath(file.path, multipleWorkspaces);
 		item.alwaysShow = matched == SHORT_BASE_NAME_MATCHED;
@@ -182,10 +206,13 @@ async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder:
 			input.busy = false;
 		}
 		if (results.length >= 100) {
-			return true; // abort the Array.some() loop
+			break;
 		}
-		return false;
-	});
+	}
+	if (seq !== activeSearchSeq) {
+		console.timeEnd("filepicker#findCandidatesInWorkspaceFolder");
+		return;
+	}
 	// We would like to sort the results, but QuickPickWindow seems have its own sorting, -_-||
 	input.items = input.items.concat(results).concat(fuzzyMatchedResults);
 	if (input.items.length == 0) {
@@ -205,21 +232,21 @@ async function pickFile() {
 			// input.ignoreFocusOut = true
 			input.matchOnDescription = true;
 			input.matchOnDetail = true;
-			const timeoutObjs: any[] = []
+			let pendingTimeout: NodeJS.Timeout | undefined;
 			input.placeholder = 'Type To Search For Files';
 			showRentlyFiles(input);
 			disposables.push(
 				input.onDidChangeValue(key => {
-					if (timeoutObjs.length > 0) {
-						log("input changed too frequently, cancel previous query");
-						timeoutObjs.forEach(obj => clearTimeout(obj))
-						while (timeoutObjs.length > 0) {
-							timeoutObjs.pop();
-						}
+					// Bump the seq immediately so any in-flight search bails at
+					// its next yield point, regardless of the debounce window.
+					const seq = ++activeSearchSeq;
+					if (pendingTimeout !== undefined) {
+						clearTimeout(pendingTimeout);
 					}
-					const pattern = key;
-					const timeoutObj = setTimeout(showSearchResults, 300/* millis */, input, pattern);
-					timeoutObjs.push(timeoutObj);
+					pendingTimeout = setTimeout(() => {
+						pendingTimeout = undefined;
+						showSearchResults(input, key, seq);
+					}, 80 /* millis */);
 				}),
 				input.onDidChangeSelection(items => {
 					const item = items[0];
