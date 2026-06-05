@@ -49,6 +49,11 @@
           "default": "",
           "description": "Specifies the folders that you don't want to be indexed, !!!you have to rebuild the search database manually after changed this!!!\nMultiple dirs are sepearted by ':' letter, e.g. ${workspace}/out:${workspace}/build:/mnt/aosp/cts/:.git\nIt's recommend that you add directories into the exclude list by using the explore context menu that we provided, goto the extension's detail page to take a preview.\nFYI, Hidden files won't be indexed anyway."
         },
+        "FilePicker.excludeFileTypes": {
+          "type": "string",
+          "default": "",
+          "description": "Specifies file types that you don't want to be indexed, !!!you have to rebuild the search database manually after changed this!!!\nMultiple dirs are sepearted by ':' letter, e.g. ${workspace}/out:${workspace}/build:/mnt/aosp/cts/:.git\nIt's recommend that you add directories into the exclude list by using the explore context menu that we provided, goto the extension's detail page to take a preview.\nFYI, Hidden files won't be indexed anyway."
+        },
         "FilePicker.showDebugLog": {
           "type": "string",
           "default": "None",
@@ -95,6 +100,7 @@
     "url": "https://github.com/wwm0609/quickfilepicker"
   },
   "dependencies": {
-    "readdirp": "^3.0.2"
+    "readdirp": "^3.0.2",
+    "vsce": "^2.15.0"
   }
 }

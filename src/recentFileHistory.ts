@@ -20,7 +20,7 @@ export function removeFileFromHistory(file: string) {
         return;
     }
 
-    logv("filepicker: " + file + " was removed from history");
+    logv(file + " was removed from history");
     recentlyOpenedFileList.splice(index, 1);
     recentOpenedFileListChanged = true;
     setTimeout(persistRecentlyOpenedFileList, 1000);
@@ -36,7 +36,7 @@ export async function initRecentFileHistory() {
         loadRecentlyOpenedFileListCache().then(() => {
             fs.exists(file, (exists) => {
                 if (!exists) {
-                    log("filepicker: " + file + " not exist on disk");
+                    log(file + " not exist on disk");
                     return;
                 }
                 recentOpenedFileListChanged = updateRecentlyOpenedFilesList(file)
@@ -63,7 +63,7 @@ function updateRecentlyOpenedFilesList(file: string) {
         return false;
     }
 
-    logv("filepicker: " + file + " was opened");
+    logv(file + " was opened");
     if (index > 0) recentlyOpenedFileList.splice(index, 1);
     recentlyOpenedFileList.unshift(file);
     const max_count = 50; /* keep track of this amount of most recently opened files */
@@ -81,7 +81,7 @@ function persistRecentlyOpenedFileList() {
         stream.write("# Auto generated, please do not modify");
         const workspaceFolder = getWorkspaceFolderOfRecentFileDatabase(dbfile);
         if (!workspaceFolder) {
-            logw("filepicker: con't find workspace folder for recently opened file list database: " + dbfile);
+            logw("con't find workspace folder for recently opened file list database: " + dbfile);
             return;
         }
         stream.write("# auto generated file, used to cache recently opened files\n");
@@ -92,7 +92,7 @@ function persistRecentlyOpenedFileList() {
         });
         stream.end();
     })
-    log("filepicker: changes of recently opened file list have been wrote to disk");
+    log("changes of recently opened file list have been wrote to disk");
 }
 
 
@@ -103,11 +103,11 @@ function loadRecentlyOpenedFileListCache() {
         return new Promise((resolve, reject) => {
             fs.stat(file, (err, fileStat) => {
                 if (err || !fileStat.isFile()) {
-                    log("filepicker: recently opened files db not exist");
+                    log("recently opened files db not exist");
                     resolve();
                     return;
                 }
-                logd("filepicker: load recently opened file list db");
+                logd("load recently opened file list db");
                 const readInterface = readline.createInterface({
                     input: fs.createReadStream(file),
                     output: process.stdout,
@@ -119,7 +119,7 @@ function loadRecentlyOpenedFileListCache() {
                 });
                 readInterface.on('close', () => {
                     resolve();
-                    log("filepicker: recently opened file list loaded");
+                    log("recently opened file list loaded");
                 });
             });
         });

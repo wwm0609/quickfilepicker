@@ -1,0 +1,1 @@
+这是一个vscode filepicker 插件，在大型项目中相比vscode原生的file picker速度更快

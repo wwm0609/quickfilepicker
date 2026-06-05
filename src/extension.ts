@@ -12,7 +12,7 @@ export function activate(context: ExtensionContext) {
 	const workspaceDir = getWorkspaceFolder();
 	setLogLevel(vscode.workspace.getConfiguration("FilePicker")
 		.get("showDebugLog", "None"));
-	log("filepicker: activated for " + workspaceDir);
+	log("activated for " + workspaceDir);
 	vscode.workspace.onDidChangeConfiguration((e) => {
 		setLogLevel(vscode.workspace.getConfiguration("FilePicker")
 			.get("showDebugLog", "None"));
@@ -31,7 +31,7 @@ export function activate(context: ExtensionContext) {
 		// update status bar every 100 millis
 		await buildSearchDatabase().catch((err) => {
 			isBuildingSearchDatabase = false;
-			log("filepicker: failed to build file list database, " + err);
+			log("failed to build file list database, " + err);
 		});
 		vscode.window.showInformationMessage("Search database created!");
 		isBuildingSearchDatabase = false;
