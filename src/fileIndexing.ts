@@ -1,18 +1,31 @@
 import fs = require('fs');
-import { getWorkspaceFolder, getWorkspaceFolders, log, logv, getSearchDatabaseFile, logw, loge } from "./constants";
+import { getWorkspaceFolder, getWorkspaceFolders, log, logv, getSearchDatabaseFile, logw, loge, buildShortName } from "./constants";
 import readline = require('readline');
 import * as path from 'path';
 import * as vscode from 'vscode';
 import readdirp = require('readdirp');
 
+export interface IndexedFile {
+    path: string;
+    basenameLower: string;
+    shortName: string;
+}
 
+export function makeIndexedFile(absPath: string): IndexedFile {
+    const basename = path.basename(absPath);
+    return {
+        path: absPath,
+        basenameLower: basename.toLowerCase(),
+        shortName: buildShortName(basename),
+    };
+}
 
-const fileListMap: Map<string, string[]> = new Map();
+const fileListMap: Map<string, IndexedFile[]> = new Map();
 
 const HEADLINE = "# Auto generated, please don't modify it directly\n"
     + "# You might want to add it into your project's .gitignore\n";
 
-function _getFileListOfWorkspaceFolder(workspaceFolder: string) {
+function _getFileListOfWorkspaceFolder(workspaceFolder: string): IndexedFile[] {
     var fileList = fileListMap.get(workspaceFolder);
     if (!fileList) {
         fileList = [];
@@ -21,12 +34,14 @@ function _getFileListOfWorkspaceFolder(workspaceFolder: string) {
     return fileList;
 }
 
+function _updateFileListForWorkspace(workspaceFolder: string, fileList: IndexedFile[]) {
+    fileListMap.set(workspaceFolder, fileList);
+}
 
 export async function getFileListOfWorkspaceFolder(workspaceFolder: string) {
     await loadSearchDatabaseAsync();
     return _getFileListOfWorkspaceFolder(workspaceFolder);
 }
-
 
 export async function loadSearchDatabaseAsync() {
     // we have already loaded the cache file
@@ -35,33 +50,42 @@ export async function loadSearchDatabaseAsync() {
     }
     // one shot operarion
     await Promise.all(getWorkspaceFolders().map(workspaceFolder => {
-        const file_list: string[] = []
-        fileListMap.set(workspaceFolder, file_list);
         return new Promise((resolve, reject) => {
+            var fileSet: Set<string> = readFileListFromCompileDb(workspaceFolder)
             var databaseFile = getSearchDatabaseFile(workspaceFolder);
             if (!fs.existsSync(databaseFile)) {
-                log("filepicker: search datababse not exist");
-                resolve();
+                log("search datababse not exist, compiledb entry count=" + fileSet.size);
+                fileListMap.set(workspaceFolder, pathsToIndexedFiles(fileSet));
+                resolve(null);
+                return
             }
 
             console.time("filepicker_loadSearchDatabase");
-            log("filepicker: loading search datababse at " + databaseFile)
+            log("loading search datababse at " + databaseFile)
             const readInterface = readline.createInterface({
                 input: fs.createReadStream(databaseFile),
                 output: process.stdout,
             });
             readInterface.on('line', function (line: string) {
-                if (line.length > 0 && !line.startsWith('#')) {
-                    file_list.push(line);
-                }
+                fileSet.add(line);
             });
             readInterface.on('close', () => {
-                log("filepicker: just loaded " + databaseFile);
+                log("just loaded " + databaseFile);
+                fileListMap.set(workspaceFolder, pathsToIndexedFiles(fileSet));
                 console.timeEnd("filepicker_loadSearchDatabase");
-                resolve();
+                resolve(null);
+                return;
             });
         });
     }));
+}
+
+function pathsToIndexedFiles(paths: Iterable<string>): IndexedFile[] {
+    const result: IndexedFile[] = [];
+    for (const p of paths) {
+        result.push(makeIndexedFile(p));
+    }
+    return result;
 }
 
 const property_key_exclude_dirs = "excludeDirs";
@@ -84,7 +108,7 @@ export async function addExcludeDirs(dirs: string[]) {
     var newExcludeDirs = dirs.sort((a, b) => a.length - b.length).filter((dir: string) => {
         // assert
         if (!isDirectoryInsideWorkspace(dir, workspaceDirs)) {
-            log("filepicker: #updateIncludeAndExcludeDirs, illegal dir: " + dir + " not in workspace");
+            log("#updateIncludeAndExcludeDirs, illegal dir: " + dir + " not in workspace");
             return false;
         }
         // check if it is already excluded
@@ -96,7 +120,7 @@ export async function addExcludeDirs(dirs: string[]) {
     });
 
     if (newExcludeDirs.length == 0) {
-        log("filepicker: already excluded: " + dirs);
+        log("already excluded: " + dirs);
         vscode.window.showInformationMessage("Already excluded: " + dirs)
         return;
     }
@@ -106,7 +130,7 @@ export async function addExcludeDirs(dirs: string[]) {
     var workspaceFoldersNeedToReScanned = [];
     for (var workspaceDir of workspaceDirs) {
         if (!fs.existsSync(getSearchDatabaseFile(getWorkspaceFolder()))) {
-            log("filepicker: search datababse for workspace folder" + workspaceDir);
+            log("search datababse for workspace folder" + workspaceDir);
             vscode.window.showInformationMessage("Search database for workspace folder: " + workspaceDir
                 + " not exist, don't forget to build it later");
             continue;
@@ -114,14 +138,14 @@ export async function addExcludeDirs(dirs: string[]) {
         workspaceFoldersNeedToReScanned.push(workspaceDir);
     }
     if (workspaceFoldersNeedToReScanned.length == 0) {
-        log("filepicker: no available search databases");
+        log("no available search databases");
         return;
     }
 
     await loadSearchDatabaseAsync();
 
     const myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    myStatusBarItem.text = `filepicker: exclude|0`;
+    myStatusBarItem.text = `exclude|0`;
     myStatusBarItem.show();
     // update files list: remove excluded files
     await Promise.all(newExcludeDirs.map((dir) => {
@@ -132,17 +156,17 @@ export async function addExcludeDirs(dirs: string[]) {
         var index = fileList.length;
         var deleteCount = 0;
         while (--index > 0) {
-            if (fileList[index].startsWith(dir)) {
+            if (fileList[index].path.startsWith(dir)) {
                 deleteCount++;
                 continue;
             }
 
-            if (deleteCount > 0) fileList.splice(index+1, deleteCount);
+            if (deleteCount > 0) fileList.splice(index + 1, deleteCount);
             deleteCount = 0;
         }
     }));
     myStatusBarItem.hide();
-    log("filepicker: #addExcludeDirs, just excluded " + newExcludeDirs);
+    log("#addExcludeDirs, just excluded " + newExcludeDirs);
     persistFileListToDisk();
 }
 
@@ -153,7 +177,7 @@ export async function cancelExcludeDirs(cancelExcludeDirs: string[]) {
     cancelExcludeDirs.sort((a, b) => a.length - b.length).forEach((dir: string) => {
         // assert
         if (!isDirectoryInsideWorkspace(dir, workspaceDirs)) {
-            log("filepicker: #updateIncludeAndExcludeDirs, illegal dir: " + dir + " not in workspace");
+            log("#updateIncludeAndExcludeDirs, illegal dir: " + dir + " not in workspace");
             return;
         }
         // check if it is already excluded
@@ -181,7 +205,7 @@ export async function cancelExcludeDirs(cancelExcludeDirs: string[]) {
     });
 
     if (newDirs.length == 0) {
-        log("filepicker: #cancelExcludeDirs, nothing canceled");
+        log("#cancelExcludeDirs, nothing canceled");
         return;
     }
 
@@ -191,7 +215,7 @@ export async function cancelExcludeDirs(cancelExcludeDirs: string[]) {
     var workspaceFoldersNeedToIndexed = [];
     for (var workspaceDir of workspaceDirs) {
         if (!fs.existsSync(getSearchDatabaseFile(getWorkspaceFolder()))) {
-            log("filepicker: search datababse for workspace folder" + workspaceDir);
+            log("search datababse for workspace folder" + workspaceDir);
             vscode.window.showInformationMessage("Search database for workspace folder: " + workspaceDir
                 + " not exist, don't forget to build it later");
             continue;
@@ -199,7 +223,7 @@ export async function cancelExcludeDirs(cancelExcludeDirs: string[]) {
         workspaceFoldersNeedToIndexed.push(workspaceDir);
     }
     if (workspaceFoldersNeedToIndexed.length == 0) {
-        log("filepicker: no available search databases");
+        log("no available search databases");
         return;
     }
 
@@ -207,7 +231,7 @@ export async function cancelExcludeDirs(cancelExcludeDirs: string[]) {
     await loadSearchDatabaseAsync();
 
     const myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    myStatusBarItem.text = `filepicker: incremental indexing...`;
+    myStatusBarItem.text = `incremental indexing...`;
     myStatusBarItem.show();
     var count = 0
 
@@ -216,20 +240,32 @@ export async function cancelExcludeDirs(cancelExcludeDirs: string[]) {
         var workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(dir));
         const workspaceDir = workspaceFolder ? workspaceFolder.uri.fsPath : "";
         const fileList = _getFileListOfWorkspaceFolder(workspaceDir);
-        return walkFileTree(dir, currentExcludeDirs, (abs_path: string) => {
+        const fileSet: Set<string> = new Set(fileList.map(f => f.path));
+        walkFileTree(dir, currentExcludeDirs, (abs_path: string) => {
+            // The end
+            if (abs_path == null) {
+                _updateFileListForWorkspace(workspaceDir, pathsToIndexedFiles(fileSet))
+                return;
+            }
             var file = abs_path;
-            // todo: indexof is expensive
-            if (fileList.indexOf(file) < 0) {
-                logv("filepicker: found " + file);
-                fileList.push(file);
-                myStatusBarItem.text = `filepicker: incremental indexing|` + (++count);
+            if (!fileSet.has(file)) {
+                logv("found " + file);
+                fileSet.add(file)
+                myStatusBarItem.text = `incremental indexing|` + (++count);
             }
         });
     }));
     myStatusBarItem.hide();
-    log("filepicker: #cancelExcludeDirs, just indexed " + newDirs);
+    log("#cancelExcludeDirs, just indexed " + newDirs);
 
     persistFileListToDisk();
+}
+
+function loadExcludedFileTypes() {
+    let config = vscode.workspace.getConfiguration("FilePicker");
+    const excludeFileTypes = config.get("excludeFileTypes", "");
+    log("excludeFileTypes: " + excludeFileTypes)
+    return excludeFileTypes.split(":");
 }
 
 // we'll won't indexing files under these directoies anyway
@@ -313,44 +349,58 @@ function persistFileListToDisk() {
         const pathOfNewDb = pathOfDb + ".new";
         const stream = fs.createWriteStream(pathOfNewDb);
         stream.write(HEADLINE);
-        fileList.forEach((item: string) => {
-            stream.write(item + "\n");
+        fileList.forEach((item: IndexedFile) => {
+            stream.write(item.path + "\n");
         });
         stream.end();
         fs.rename(pathOfNewDb, pathOfDb, () => {
-            log("filepicker: search database file for workspace foler " + workspaceFolder + " was updated");
+            log("search database file for workspace foler " + workspaceFolder + " was updated");
         });
     });
 }
 
 export async function buildSearchDatabase() {
     var excludeDirs = loadExcludedDirs();
+    var excludeFileTypes = new Set<string>(loadExcludedFileTypes())
     console.time("filepicker#buildSearchDatabase");
     for (var workspaceFolder of getWorkspaceFolders()) {
-        log("filepicker: begin build search database for " + workspaceFolder + ", exclude dirs: " + excludeDirs);
+        log("begin build search database for " + workspaceFolder + ", exclude dirs: " + excludeDirs);
         const cacheFile = getSearchDatabaseFile(workspaceFolder);
-        const fileList = _getFileListOfWorkspaceFolder(workspaceFolder)
         const tmpCacheFile = cacheFile + ".new";
         const stream = fs.createWriteStream(tmpCacheFile);
         stream.write(HEADLINE)
         // scan all folders in the workspace except those that use manually excluded
 
         const myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-        myStatusBarItem.text = `filepicker: indexing...`;
+        myStatusBarItem.text = `indexing...`;
         myStatusBarItem.show();
         var count = 0
-        fileList.length = 0;
+        const fileSet = new Set<string>();
         await walkFileTree(workspaceFolder, excludeDirs, (abs_path: string) => {
-            logv("filepicker: found " + abs_path);
-            fileList.push(abs_path);
-            stream.write(abs_path + "\n");
-            myStatusBarItem.text = `filepicker: indexing|` + (++count);
-        });
-        myStatusBarItem.hide();
-        stream.end();
-        log("filepicker: found " + fileList.length + " files under " + workspaceFolder);
-        fs.rename(tmpCacheFile, cacheFile, () => {
-            log("filepicker: wrote search database into " + cacheFile);
+            // The end
+            if (abs_path == null) {
+                _updateFileListForWorkspace(workspaceFolder, pathsToIndexedFiles(fileSet))
+                myStatusBarItem.hide();
+                stream.end();
+                log("found " + fileSet.size + " files under " + workspaceFolder);
+                fs.rename(tmpCacheFile, cacheFile, () => {
+                    log("wrote search database into " + cacheFile);
+                });
+                return;
+            }
+
+            var fileType = path.extname(abs_path);
+            if (excludeFileTypes.has(fileType)) {
+                logv("skip excluded file type: " + abs_path)
+                return
+            }
+
+            if (!fileSet.has(abs_path)) {
+                logv("found " + abs_path);
+                fileSet.add(abs_path);
+                stream.write(abs_path + "\n");
+                myStatusBarItem.text = `indexing|` + (++count);
+            }
         });
     }
     console.timeEnd("filepicker#buildSearchDatabase");
@@ -365,6 +415,7 @@ function shouldSkipFolder(dir: string/*abs path*/, name: string /*dir name*/, fi
     for (var filter of filters) {
         // and others whose is in the filter
         if (dir === filter || name === filter) {
+            logv("excluded " + dir);
             return true;
         }
     }
@@ -375,15 +426,63 @@ function shouldSkipFile(name: string, filters?: string[] /*abs path*/) {
     return name.charAt(0) == '.';
 }
 
+function parse_compile_db(dir: string, filters: string[], onNewFile: any) {
+    var compile_db = path.join(dir, "compile_commands.json");
+    if (!fs.existsSync(compile_db)) {
+        logv("compile db not exist: " + compile_db)
+        return false;
+    }
+    logv("Loading from " + compile_db)
+    try {
+        let file_contents = fs.readFileSync(compile_db, 'utf8')
+        let compile_commands = JSON.parse(file_contents)
+        for (var compile_command of compile_commands) {
+            let parent_dir = compile_command["directory"]
+            let file = compile_command["file"]
+            let fullPath = file.startsWith("/") ? file: path.join(parent_dir, file)
+            if (!parent_dir.startsWith(dir)
+                    || shouldSkipFolder(fullPath, path.basename(fullPath), filters)) {
+                logv("excluded " + fullPath);
+            } else {
+                onNewFile(fullPath);
+            }
+        }
+        return true;
+    } catch (error) {
+        logv("Contents of compile db is not valid: " + compile_db)
+    }
+    return false;
+}
+
+function readFileListFromCompileDb(workspaceDir: string) {
+    const fileSet: Set<string> = new Set();
+    parse_compile_db(workspaceDir, [], (abs_path: string) => {
+        var file = abs_path;
+        if (!fileSet.has(file)) {
+            logv("found " + file);
+            fileSet.add(file)
+        }
+    })
+    return fileSet
+}
+
 //  filters: string[] /* files in these folers will be indexed */
 function walkFileTree(dir: string, filters: string[], onNewFile: any) {
     return new Promise((resolve, reject) => {
+        // Always load the compile_commands.json if it exists under $dir
+        parse_compile_db(dir, filters, onNewFile);
         readdirp(dir, {
+            // Follow symlinks
+            lstat: true,
+            alwaysStat: true,
             fileFilter: (entry: any) => !shouldSkipFile(path.basename(entry.basename)),
             directoryFilter: (entry: any) => !shouldSkipFolder(entry.fullPath, entry.basename, filters),
         }).on('data', (entry: any) => onNewFile(entry.fullPath))
-            .on('warn', (error: any) => logw('filepicker: ' + error))
-            .on('error', (error: any) => loge('filepicker: ' + error))
-            .on('end', () => resolve());
+            .on('warn', (error: any) => logw('' + error))
+            .on('error', (error: any) => loge('' + error))
+            .on('end', () => {
+                onNewFile(null);
+                resolve(null);
+            });
     });
 }

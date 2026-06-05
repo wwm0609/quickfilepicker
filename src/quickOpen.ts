@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
 import { getWorkspaceFolders, log, isUnixLikeSystem, logw, logd } from "./constants";
-import { getFileListOfWorkspaceFolder } from './fileIndexing';
+import { getFileListOfWorkspaceFolder, IndexedFile } from './fileIndexing';
 import { getRecentlyOpenedFileList, removeFileFromHistory } from './recentFileHistory'
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -15,11 +15,12 @@ import * as fs from 'fs';
 export async function quickOpen() {
 	const uri = await pickFile();
 	if (uri) {
-		log("filepicker: opening " + uri);
+		log("opening " + uri);
 		await workspace.openTextDocument(uri).then((value) => {
+			// open the new file beside the active tab
 			window.showTextDocument(value);
 		}, (reason) => {
-			log("filepicker: failed to open " + uri + ", error=" + reason);
+			log("failed to open " + uri + ", error=" + reason);
 			fs.exists(uri.fsPath, (exists) => {
 				if (!exists) {
 					removeFileFromHistory(uri.fsPath);
@@ -38,14 +39,19 @@ class FileItem implements QuickPickItem {
 	description: string;
 	detail: string;
 	uri: Uri;
+	alwaysShow: boolean
 
-	static fromUri(uri: Uri, showFullPathAsDetail?: boolean) {
+	toString() {
+		return this.label + ": " + this.description;
+	}
+
+	static fromUri(uri: Uri, showFullPathAsDetail?: boolean, ) {
 		var abspath = uri.fsPath;
 		var workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
 		if (!workspaceFolder) {
-			logw("filepicker: " + abspath + " not opened in workspace")
+			logw("" + abspath + " not opened in workspace")
 		}
-		var prefix = isUnixLikeSystem() ? "./":  ""; // if on unix like systems
+		var prefix = isUnixLikeSystem() ? "./" : ""; // if on unix like systems
 		var relativePath = prefix + vscode.workspace.asRelativePath(abspath);
 		return new FileItem(uri, relativePath, showFullPathAsDetail);
 	}
@@ -65,6 +71,7 @@ class FileItem implements QuickPickItem {
 		this.description = relative_path;
 		this.uri = uri;
 		this.detail = showFullPathAsDetail ? uri.fsPath : "";
+		this.alwaysShow = false
 	}
 }
 
@@ -77,23 +84,27 @@ class MessageItem implements QuickPickItem {
 		this.label = title;
 		this.description = message;
 	}
+
+	toString() {
+		return this.label + ": " + this.description;
+	}
 }
 
 const NOT_MATCHED = -1;
-// const BASE_NAME_MATCHED = 0;
-// const BASE_NAME_FUZZY_MATCHED = 1;
-// const DIR_PATH_MATCHED = 2;
-const PATH_MATCHED = 3;
+const BASE_NAME_MATCHED = 0;
+const SHORT_BASE_NAME_MATCHED = 1;
 
-function checkIfPatternMatch(pattern: string/* lower case */, file: string, workpaceFolderPath: string) {
-	if (file.includes(pattern)) return PATH_MATCHED;
-	// if (fuzzy_match_simple(pattern, basename)) return BASE_NAME_FUZZY_MATCHED;
-
-	// var relativePath = vscode.workspace.asRelativePath(file).toLowerCase();
-	// if (relativePath.includes(pattern)) return DIR_PATH_MATCHED;
-
-	if (file.toLowerCase().includes(pattern)) return PATH_MATCHED;
-
+function checkIfPatternMatch(pattern: string, patternInLowerCase: string/* lower case */, file: IndexedFile, workpaceFolderPath: string) {
+	if (file.basenameLower.includes(patternInLowerCase)) {
+		return BASE_NAME_MATCHED;
+	}
+	if (file.shortName.startsWith(patternInLowerCase)) {
+		return SHORT_BASE_NAME_MATCHED;
+	}
+	if (isUnixLikeSystem()) {
+		if (pattern.includes("/") && file.path.includes(pattern))
+			return BASE_NAME_MATCHED;
+	}
 	return NOT_MATCHED;
 }
 
@@ -105,9 +116,7 @@ async function showSearchResults(input: QuickPick<FileItem | MessageItem>, value
 	}
 
 	input.busy = true;
-	console.time("filepicker#prepareCandidates");
 	await findCandidates(input, value);
-	console.timeEnd("filepicker#prepareCandidates");
 	input.busy = false;
 }
 
@@ -119,13 +128,21 @@ async function findCandidates(input: QuickPick<FileItem | MessageItem>, pattern:
 		pattern.startsWith("./") ? pattern = pattern.substring(2) : pattern;
 	let workspaces = getWorkspaceFolders();
 	return Promise.all(workspaces.map(workspaceFolder => {
-		return findCandidatesInWorkspaceFolder(thisPattern.toLowerCase(), workspaceFolder, input, workspaces.length > 1)
+		return findCandidatesInWorkspaceFolder(thisPattern, workspaceFolder, input, workspaces.length > 1)
 	}));
 }
 
 async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder: string,
 	input: QuickPick<MessageItem | FileItem>, multipleWorkspaces: boolean) {
-	log("filepicker: #prepareCandidates, pattern: " + pattern + ", workspace folder: " + workspaceFolder);
+	log("#prepareCandidates, pattern: " + pattern + ", workspace folder: " + workspaceFolder);
+
+	var abs_file_path = path.join(workspaceFolder, pattern);
+	if (fs.existsSync(abs_file_path)) {
+		var item = FileItem.fromAbsPath(abs_file_path, multipleWorkspaces);
+		input.items = [item];
+		return;
+	}
+
 	var fileList = await getFileListOfWorkspaceFolder(workspaceFolder);
 	// input.items = (await getRecentlyOpenedFileList())
 	// 	.filter(file => isPatternMatch(pattern, file))
@@ -133,48 +150,51 @@ async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder:
 	if (fileList.length == 0) {
 		input.items = input.items.concat([
 			new MessageItem("Did you forget building search database?",
-				"please run `FilePicker: Build Search Database`")
+				"please run `Build Search Database`")
 		]);
-		log("filepicker: no available cache, perhaps you forgot to build it?");
+		log("no available cache, perhaps you forgot to build it?");
 		return;
 	}
+	console.time("filepicker#findCandidatesInWorkspaceFolder");
 
 	var results: (FileItem | MessageItem)[] = [];
 	var fuzzyMatchedResults: (FileItem | MessageItem)[] = []
+	var patternInLowerCase = pattern.toLowerCase()
 	fileList.some((file, index) => {
 		// todo: paging?
 		if (input.items.length >= 300) {
-			log("filepicker: too many search results for pattern:" + pattern + ", please narrow down the pattern");
+			log("too many search results for pattern:" + pattern + ", please narrow down the pattern");
 			return true; // abort the Array.some() loop
 		}
 
-		const matched = checkIfPatternMatch(pattern, file, workspaceFolder);
+		const matched = checkIfPatternMatch(pattern, patternInLowerCase, file, workspaceFolder);
 		if (matched == NOT_MATCHED) {
 			return false;
 		}
-		// if (matched == BASE_NAME_FUZZY_MATCHED) {
-		// 	fuzzyMatchedResults.push(FileItem.fromAbsPath(file));
-		// 	return false;
-		// }
-		results.push(FileItem.fromAbsPath(file, multipleWorkspaces));
-		// don't keep the user waiting, show the results that we already have found
+		var item = FileItem.fromAbsPath(file.path, multipleWorkspaces);
+		item.alwaysShow = matched == SHORT_BASE_NAME_MATCHED;
+		results.push(item);
+		// Show what we already have found
 		if (input.items.length == 0 && results.length >= 10) {
-			input.items = input.items.concat(results).concat(fuzzyMatchedResults);
+			input.items = (results).concat(fuzzyMatchedResults);
 			results = []
 			fuzzyMatchedResults = []
+			input.busy = false;
 		}
-		if (results.length  >= 15) {
+		if (results.length >= 100) {
 			return true; // abort the Array.some() loop
 		}
 		return false;
 	});
-	input.items = input.items.concat(results.concat(fuzzyMatchedResults));
-	if (results.length == 0) {
-		logd("filepicker:  no matching result for pattern: " + pattern);
+	// We would like to sort the results, but QuickPickWindow seems have its own sorting, -_-||
+	input.items = input.items.concat(results).concat(fuzzyMatchedResults);
+	if (input.items.length == 0) {
+		logd("no matching result for pattern: " + pattern);
 		input.items = input.items.concat(new MessageItem("Opps, nothing matched", ""));
 	} else {
-		logd("filepicker: found " + input.items.length + " matching results totaly");
+		logd("found " + input.items.length + " matching results totaly: " + results.slice(0, 5).join(", ") + " ....");
 	}
+	console.timeEnd("filepicker#findCandidatesInWorkspaceFolder");
 }
 
 async function pickFile() {
@@ -186,17 +206,19 @@ async function pickFile() {
 			input.matchOnDescription = true;
 			input.matchOnDetail = true;
 			const timeoutObjs: any[] = []
-			input.placeholder = 'FilePicker: Type To Search For Files';
+			input.placeholder = 'Type To Search For Files';
 			showRentlyFiles(input);
 			disposables.push(
 				input.onDidChangeValue(key => {
 					if (timeoutObjs.length > 0) {
-						log("filepicker: input changed too frequently, cancel previous query");
-						clearTimeout(timeoutObjs[0]);
-						timeoutObjs.length = 0;
+						log("input changed too frequently, cancel previous query");
+						timeoutObjs.forEach(obj => clearTimeout(obj))
+						while (timeoutObjs.length > 0) {
+							timeoutObjs.pop();
+						}
 					}
 					const pattern = key;
-					const timeoutObj = setTimeout(showSearchResults, 200, input, pattern);
+					const timeoutObj = setTimeout(showSearchResults, 300/* millis */, input, pattern);
 					timeoutObjs.push(timeoutObj);
 				}),
 				input.onDidChangeSelection(items => {

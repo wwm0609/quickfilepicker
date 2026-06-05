@@ -80,42 +80,42 @@ export function setLogLevel(new_level: string) {
         case "error": level = Error; break;
         default: level = NONE;
     }
-    console.log("filepicker: set log level to " + new_level)
+    console.log("FilePicker: set log level to " + new_level)
 }
 
 export function logv(message: string) {
     if (Verbose >= level) {
-        console.log(message);
+        console.log("FilePicker: " + message);
     }
 }
 
 export function log(message: any) {
     if (Debug >= level) {
-        console.log(message);
+        console.log("FilePicker: " + message);
     }
 }
 
 export function logd(message: string) {
     if (Debug >= level) {
-        console.log(message);
+        console.log("FilePicker: " + message);
     }
 }
 
 export function logi(message: string) {
     if (Info >= level) {
-        console.log(message);
+        console.log("FilePicker: " + message);
     }
 }
 
 export function logw(message: string) {
     if (Warning >= level) {
-        console.warn(message);
+        console.warn("FilePicker: " + message);
     }
 }
 
 export function loge(message: string) {
     if (Error >= level) {
-        console.error(message);
+        console.error("FilePicker: " + message);
     }
 }
 
@@ -130,6 +130,21 @@ export function getWorkspaceFolder() {
     return getWorkspaceFolders()[0];
 }
 
-export function fuzzy_match_simple(pattern: string, str: string) {
-    return false
+export function buildShortName(fileName: string) {
+    var result = "";
+    var idx = 0;
+    while (idx < fileName.length && fileName[idx] != '.') {
+        if (fileName[idx] >= 'A' && fileName[idx] <= 'Z') {
+            var prevIsLowerCase = idx == 0
+                || (idx > 0 && fileName[idx - 1] <= 'z' && fileName[idx - 1] >= 'a');
+            var nextIsLowerCase = (idx == fileName.length - 1)
+                || (idx < fileName.length - 1 && fileName[idx + 1] <= 'z' && fileName[idx + 1] >= 'a');
+            if (prevIsLowerCase && nextIsLowerCase) {
+                result+= fileName[idx].toLowerCase();
+            }
+        }
+        idx++;
+    }
+    if (result.length == 0) return result;
+    return result + (idx < fileName.length ? fileName.substr(idx) : "");
 }
