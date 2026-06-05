@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { Uri, window, Disposable, QuickPickItem, workspace, QuickPick } from 'vscode';
 import { getWorkspaceFolders, log, isUnixLikeSystem, logw, logd } from "./constants";
-import { getFileListOfWorkspaceFolder, IndexedFile } from './fileIndexing';
+import { getFileListOfWorkspaceFolder, IndexedFile, lookupTrigramCandidates } from './fileIndexing';
 import { getRecentlyOpenedFileList, removeFileFromHistory } from './recentFileHistory'
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -171,11 +171,24 @@ async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder:
 	var results: (FileItem | MessageItem)[] = [];
 	var fuzzyMatchedResults: (FileItem | MessageItem)[] = []
 	var patternInLowerCase = pattern.toLowerCase()
-	const total = fileList.length;
-	for (var index = 0; index < total; index++) {
+
+	// Pick the iteration source: trigram candidates when usable, else full scan.
+	// The basename trigram index can't represent matches that only appear in the
+	// path portion, so patterns containing '/' fall back to the full scan.
+	let candidates: Uint32Array | null = null;
+	if (patternInLowerCase.length >= 3 && pattern.indexOf("/") < 0) {
+		candidates = lookupTrigramCandidates(workspaceFolder, patternInLowerCase);
+	}
+	const useCandidates = candidates !== null;
+	const total = useCandidates ? candidates!.length : fileList.length;
+	if (useCandidates) {
+		log("trigram candidates: " + total + " (pattern=" + pattern + ")");
+	}
+
+	for (var i = 0; i < total; i++) {
 		// Yield to the event loop periodically and bail out if a newer search
 		// has started in the meantime.
-		if (index > 0 && (index % YIELD_EVERY) == 0) {
+		if (i > 0 && (i % YIELD_EVERY) == 0) {
 			await yieldToEventLoop();
 			if (seq !== activeSearchSeq) {
 				log("search canceled for pattern: " + pattern);
@@ -190,7 +203,8 @@ async function findCandidatesInWorkspaceFolder(pattern: string, workspaceFolder:
 			break;
 		}
 
-		const file = fileList[index];
+		const fileIdx = useCandidates ? candidates![i] : i;
+		const file = fileList[fileIdx];
 		const matched = checkIfPatternMatch(pattern, patternInLowerCase, file, workspaceFolder);
 		if (matched == NOT_MATCHED) {
 			continue;

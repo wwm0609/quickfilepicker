@@ -36,6 +36,7 @@ function _getFileListOfWorkspaceFolder(workspaceFolder: string): IndexedFile[] {
 
 function _updateFileListForWorkspace(workspaceFolder: string, fileList: IndexedFile[]) {
     fileListMap.set(workspaceFolder, fileList);
+    setTrigramIndex(workspaceFolder, fileList);
 }
 
 export async function getFileListOfWorkspaceFolder(workspaceFolder: string) {
@@ -55,7 +56,7 @@ export async function loadSearchDatabaseAsync() {
             var databaseFile = getSearchDatabaseFile(workspaceFolder);
             if (!fs.existsSync(databaseFile)) {
                 log("search datababse not exist, compiledb entry count=" + fileSet.size);
-                fileListMap.set(workspaceFolder, pathsToIndexedFiles(fileSet));
+                _updateFileListForWorkspace(workspaceFolder, pathsToIndexedFiles(fileSet));
                 resolve(null);
                 return
             }
@@ -71,7 +72,7 @@ export async function loadSearchDatabaseAsync() {
             });
             readInterface.on('close', () => {
                 log("just loaded " + databaseFile);
-                fileListMap.set(workspaceFolder, pathsToIndexedFiles(fileSet));
+                _updateFileListForWorkspace(workspaceFolder, pathsToIndexedFiles(fileSet));
                 console.timeEnd("filepicker_loadSearchDatabase");
                 resolve(null);
                 return;
@@ -86,6 +87,172 @@ function pathsToIndexedFiles(paths: Iterable<string>): IndexedFile[] {
         result.push(makeIndexedFile(p));
     }
     return result;
+}
+
+// Trigram inverted index over basenameLower of every IndexedFile in a workspace.
+// Maps each 3-char substring to the sorted list of file indices whose basename
+// contains it. Pattern lookup intersects the posting lists for the pattern's
+// trigrams to obtain a small candidate set, avoiding a full scan.
+//
+// Stored as Uint32Array (4B/entry) instead of number[] (~50B/entry in V8) to
+// keep memory bounded on large workspaces (~15-20MB for 310k files).
+//
+// Companion shortNameByFirstChar index: trigrams are over basenameLower, so
+// they would miss CamelCase shortName matches like "ams" -> ActivityManagerService.
+// For each non-empty shortName, we bucket (shortName, fileIdx) by its first
+// character so a shortName.startsWith(pattern) lookup can scan only one bucket.
+export interface TrigramIndex {
+    postings: Map<string, Uint32Array>;
+    shortNameByFirstChar: Map<string, Array<[string, number]>>;
+    fileCount: number;
+}
+
+const trigramIndexMap: Map<string, TrigramIndex> = new Map();
+
+const TRIGRAM_LEN = 3;
+
+function buildTrigramIndex(fileList: IndexedFile[]): TrigramIndex {
+    const builder: Map<string, number[]> = new Map();
+    const seenInThisFile = new Set<string>();
+    const shortNameByFirstChar: Map<string, Array<[string, number]>> = new Map();
+    for (let i = 0; i < fileList.length; i++) {
+        const f = fileList[i];
+        const bn = f.basenameLower;
+        if (bn.length >= TRIGRAM_LEN) {
+            seenInThisFile.clear();
+            const last = bn.length - TRIGRAM_LEN;
+            for (let j = 0; j <= last; j++) {
+                const gram = bn.substr(j, TRIGRAM_LEN);
+                if (seenInThisFile.has(gram)) continue;
+                seenInThisFile.add(gram);
+                let list = builder.get(gram);
+                if (!list) {
+                    list = [];
+                    builder.set(gram, list);
+                }
+                // i is monotonically increasing, so list stays sorted.
+                list.push(i);
+            }
+        }
+        if (f.shortName.length > 0) {
+            const c = f.shortName.charAt(0);
+            let bucket = shortNameByFirstChar.get(c);
+            if (!bucket) {
+                bucket = [];
+                shortNameByFirstChar.set(c, bucket);
+            }
+            bucket.push([f.shortName, i]);
+        }
+    }
+    const postings: Map<string, Uint32Array> = new Map();
+    builder.forEach((list, gram) => {
+        postings.set(gram, Uint32Array.from(list));
+    });
+    return { postings, shortNameByFirstChar, fileCount: fileList.length };
+}
+
+function setTrigramIndex(workspaceFolder: string, fileList: IndexedFile[]) {
+    console.time("filepicker_buildTrigramIndex");
+    const index = buildTrigramIndex(fileList);
+    trigramIndexMap.set(workspaceFolder, index);
+    console.timeEnd("filepicker_buildTrigramIndex");
+    log("built trigram index: " + index.postings.size + " unique trigrams over "
+        + index.fileCount + " files");
+}
+
+// Intersect two sorted Uint32Array posting lists into a new Uint32Array.
+function intersectSorted(a: Uint32Array, b: Uint32Array): Uint32Array {
+    const out = new Uint32Array(Math.min(a.length, b.length));
+    let ai = 0, bi = 0, oi = 0;
+    while (ai < a.length && bi < b.length) {
+        const av = a[ai], bv = b[bi];
+        if (av === bv) {
+            out[oi++] = av;
+            ai++; bi++;
+        } else if (av < bv) {
+            ai++;
+        } else {
+            bi++;
+        }
+    }
+    return out.slice(0, oi);
+}
+
+// Union two sorted Uint32Array posting lists into a new Uint32Array, deduping.
+function unionSorted(a: Uint32Array, b: Uint32Array): Uint32Array {
+    const out = new Uint32Array(a.length + b.length);
+    let ai = 0, bi = 0, oi = 0;
+    while (ai < a.length && bi < b.length) {
+        const av = a[ai], bv = b[bi];
+        if (av === bv) {
+            out[oi++] = av;
+            ai++; bi++;
+        } else if (av < bv) {
+            out[oi++] = av;
+            ai++;
+        } else {
+            out[oi++] = bv;
+            bi++;
+        }
+    }
+    while (ai < a.length) out[oi++] = a[ai++];
+    while (bi < b.length) out[oi++] = b[bi++];
+    return out.slice(0, oi);
+}
+
+// Walks the shortName bucket for the pattern's first character and returns the
+// sorted file indices whose shortName starts with the pattern.
+function lookupShortNameCandidates(index: TrigramIndex, patternLower: string): Uint32Array {
+    const bucket = index.shortNameByFirstChar.get(patternLower.charAt(0));
+    if (!bucket) return new Uint32Array(0);
+    const hits: number[] = [];
+    for (let i = 0; i < bucket.length; i++) {
+        if (bucket[i][0].startsWith(patternLower)) hits.push(bucket[i][1]);
+    }
+    if (hits.length === 0) return new Uint32Array(0);
+    // Bucket order matches insertion order (i is monotonically increasing per
+    // file in buildTrigramIndex), so hits are already sorted.
+    return Uint32Array.from(hits);
+}
+
+// Returns null when the caller should fall back to a full scan (no index built
+// yet, or pattern shorter than a single trigram). Returns an empty array when
+// the index proves there cannot be any matches.
+export function lookupTrigramCandidates(workspaceFolder: string, patternLower: string): Uint32Array | null {
+    if (patternLower.length < TRIGRAM_LEN) return null;
+    const index = trigramIndexMap.get(workspaceFolder);
+    if (!index) return null;
+    const last = patternLower.length - TRIGRAM_LEN;
+    const lists: Uint32Array[] = [];
+    for (let j = 0; j <= last; j++) {
+        const gram = patternLower.substr(j, TRIGRAM_LEN);
+        const list = index.postings.get(gram);
+        if (!list || list.length === 0) {
+            // No basename contains this trigram, but a shortName match might
+            // still exist (e.g. "ams" -> ActivityManagerService).
+            lists.length = 0;
+            break;
+        }
+        lists.push(list);
+    }
+    let basenameCandidates: Uint32Array;
+    if (lists.length === 0) {
+        basenameCandidates = new Uint32Array(0);
+    } else if (lists.length === 1) {
+        basenameCandidates = lists[0];
+    } else {
+        // Intersect shortest first to keep the running set small.
+        lists.sort((x, y) => x.length - y.length);
+        let acc = lists[0];
+        for (let k = 1; k < lists.length && acc.length > 0; k++) {
+            acc = intersectSorted(acc, lists[k]);
+        }
+        basenameCandidates = acc;
+    }
+    const shortNameCandidates = lookupShortNameCandidates(index, patternLower);
+    if (shortNameCandidates.length === 0) return basenameCandidates;
+    if (basenameCandidates.length === 0) return shortNameCandidates;
+    return unionSorted(basenameCandidates, shortNameCandidates);
 }
 
 const property_key_exclude_dirs = "excludeDirs";
@@ -147,6 +314,7 @@ export async function addExcludeDirs(dirs: string[]) {
     const myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     myStatusBarItem.text = `exclude|0`;
     myStatusBarItem.show();
+    const dirtyWorkspaces = new Set<string>();
     // update files list: remove excluded files
     await Promise.all(newExcludeDirs.map((dir) => {
         var workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(dir));
@@ -164,7 +332,11 @@ export async function addExcludeDirs(dirs: string[]) {
             if (deleteCount > 0) fileList.splice(index + 1, deleteCount);
             deleteCount = 0;
         }
+        dirtyWorkspaces.add(workspaceDir);
     }));
+    // file indices shifted after splice, so rebuild the trigram index for each
+    // affected workspace.
+    dirtyWorkspaces.forEach(ws => setTrigramIndex(ws, _getFileListOfWorkspaceFolder(ws)));
     myStatusBarItem.hide();
     log("#addExcludeDirs, just excluded " + newExcludeDirs);
     persistFileListToDisk();
