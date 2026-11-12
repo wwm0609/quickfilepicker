@@ -1,128 +1,144 @@
+// LRU list of recently opened files, persisted per workspace folder.
+
 import * as vscode from 'vscode';
-import readline = require('readline');
-import { log, logw, getRecentlyOpenedFilelistDatabases, logd, logv, getWorkspaceFolderOfRecentFileDatabase } from "./constants";
-import fs = require('fs');
+import * as fs from 'fs';
+import * as readline from 'readline';
+import { log, logw, logv, logd } from './logger';
+import { getRecentlyOpenedFilelistDatabases, getWorkspaceFolderOfRecentFileDatabase } from './paths';
 
-const recentlyOpenedFileList: string[] = []; // act like a LRU cache
+const MAX_TRACKED_FILES = 50;
+const HEADLINE = "# auto generated file, used to cache recently opened files\n";
 
-export async function getRecentlyOpenedFileList() {
+const recentlyOpenedFileList: string[] = []; // acts like a LRU cache
+
+// flag to rewrite cache
+let recentOpenedFileListChanged = false;
+let persistTimer: NodeJS.Timeout | undefined;
+
+export async function getRecentlyOpenedFileList(): Promise<string[]> {
     await loadRecentlyOpenedFileListCache();
     return recentlyOpenedFileList;
 }
 
-// flag to rewrite cache
-var recentOpenedFileListChanged = false;
+/** Map of file -> LRU position (0 = most recently opened). */
+export async function getRecentFileRanks(): Promise<Map<string, number>> {
+    await loadRecentlyOpenedFileListCache();
+    const ranks = new Map<string, number>();
+    recentlyOpenedFileList.forEach((file, i) => ranks.set(file, i));
+    return ranks;
+}
 
 export function removeFileFromHistory(file: string) {
-    var index = recentlyOpenedFileList.indexOf(file);
-    // the param file was already at the head of this LRU
+    const index = recentlyOpenedFileList.indexOf(file);
     if (index < 0) {
         return;
     }
-
     logv(file + " was removed from history");
     recentlyOpenedFileList.splice(index, 1);
     recentOpenedFileListChanged = true;
-    setTimeout(persistRecentlyOpenedFileList, 1000);
+    schedulePersist();
 }
 
-export async function initRecentFileHistory() {
+export function initRecentFileHistory() {
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-        var textEditor = editor ? editor : vscode.window.activeTextEditor;
-        if (!textEditor) {
+        const current = editor || vscode.window.activeTextEditor;
+        if (!current) {
             return;
         }
-        const file = textEditor.document.uri.fsPath;
-        loadRecentlyOpenedFileListCache().then(() => {
-            fs.exists(file, (exists) => {
-                if (!exists) {
-                    log(file + " not exist on disk");
-                    return;
-                }
-                recentOpenedFileListChanged = updateRecentlyOpenedFilesList(file)
-                        || recentOpenedFileListChanged;
-                if (recentOpenedFileListChanged) {
-                    setTimeout(persistRecentlyOpenedFileList, 1000);
-                }
-            });
-        });
+        trackOpenedFile(current.document.uri.fsPath);
     });
-    var editor = vscode.window.activeTextEditor;
+    const editor = vscode.window.activeTextEditor;
     if (editor) {
-        const file = editor.document.uri.fsPath;
-        loadRecentlyOpenedFileListCache().then(() => {
-            updateRecentlyOpenedFilesList(file);
-        });
+        trackOpenedFile(editor.document.uri.fsPath);
     }
 }
 
-function updateRecentlyOpenedFilesList(file: string) {
-    var index = recentlyOpenedFileList.indexOf(file);
+function trackOpenedFile(file: string) {
+    loadRecentlyOpenedFileListCache().then(() => {
+        fs.stat(file, (err) => {
+            if (err) {
+                log(file + " not exist on disk");
+                return;
+            }
+            if (updateRecentlyOpenedFilesList(file)) {
+                recentOpenedFileListChanged = true;
+                schedulePersist();
+            }
+        });
+    });
+}
+
+function updateRecentlyOpenedFilesList(file: string): boolean {
+    const index = recentlyOpenedFileList.indexOf(file);
     // the param file was already at the head of this LRU
-    if (index == 0) {
+    if (index === 0) {
         return false;
     }
-
     logv(file + " was opened");
-    if (index > 0) recentlyOpenedFileList.splice(index, 1);
+    if (index > 0) {
+        recentlyOpenedFileList.splice(index, 1);
+    }
     recentlyOpenedFileList.unshift(file);
-    const max_count = 50; /* keep track of this amount of most recently opened files */
-    if (recentlyOpenedFileList.length > max_count) {
-        recentlyOpenedFileList.splice(max_count, recentlyOpenedFileList.length - max_count);
+    if (recentlyOpenedFileList.length > MAX_TRACKED_FILES) {
+        recentlyOpenedFileList.splice(MAX_TRACKED_FILES,
+            recentlyOpenedFileList.length - MAX_TRACKED_FILES);
     }
     return true;
+}
+
+function schedulePersist() {
+    if (persistTimer !== undefined) {
+        clearTimeout(persistTimer);
+    }
+    persistTimer = setTimeout(() => {
+        persistTimer = undefined;
+        persistRecentlyOpenedFileList();
+    }, 1000);
 }
 
 function persistRecentlyOpenedFileList() {
     if (!recentOpenedFileListChanged) return;
     recentOpenedFileListChanged = false;
-    getRecentlyOpenedFilelistDatabases().forEach(dbfile => {
-        const stream = fs.createWriteStream(dbfile);
-        stream.write("# Auto generated, please do not modify");
-        const workspaceFolder = getWorkspaceFolderOfRecentFileDatabase(dbfile);
+    getRecentlyOpenedFilelistDatabases().forEach(dbFile => {
+        const workspaceFolder = getWorkspaceFolderOfRecentFileDatabase(dbFile);
         if (!workspaceFolder) {
-            logw("con't find workspace folder for recently opened file list database: " + dbfile);
+            logw("can't find workspace folder for recently opened file list database: " + dbFile);
             return;
         }
-        stream.write("# auto generated file, used to cache recently opened files\n");
-        recentlyOpenedFileList.forEach((file) => {
-            if (file.startsWith(workspaceFolder)) {
-                stream.write(file + '\n');
-            }
-        });
-        stream.end();
-    })
+        const lines = recentlyOpenedFileList
+            .filter(file => file.startsWith(workspaceFolder))
+            .map(file => file + "\n")
+            .join("");
+        fs.writeFileSync(dbFile, HEADLINE + lines);
+    });
     log("changes of recently opened file list have been wrote to disk");
 }
 
+let fileListLoadedPromise: Promise<void> | undefined;
 
-var fileListLoadedPromise:Promise<any>;
-function loadRecentlyOpenedFileListCache() {
+function loadRecentlyOpenedFileListCache(): Promise<void> {
     if (fileListLoadedPromise) return fileListLoadedPromise;
-    fileListLoadedPromise =  Promise.all(getRecentlyOpenedFilelistDatabases().map(file => {
-        return new Promise((resolve, reject) => {
-            fs.stat(file, (err, fileStat) => {
-                if (err || !fileStat.isFile()) {
-                    log("recently opened files db not exist");
-                    resolve();
-                    return;
+    fileListLoadedPromise = Promise.all(getRecentlyOpenedFilelistDatabases().map(dbFile => {
+        return new Promise<void>((resolve) => {
+            if (!fs.existsSync(dbFile)) {
+                log("recently opened files db not exist");
+                resolve();
+                return;
+            }
+            logd("load recently opened file list db");
+            const readInterface = readline.createInterface({
+                input: fs.createReadStream(dbFile),
+            });
+            readInterface.on('line', (line: string) => {
+                if (line.length > 0 && !line.startsWith('#')) {
+                    updateRecentlyOpenedFilesList(line);
                 }
-                logd("load recently opened file list db");
-                const readInterface = readline.createInterface({
-                    input: fs.createReadStream(file),
-                    output: process.stdout,
-                });
-                readInterface.on('line', function (line: string) {
-                    if (line.length > 0 && !line.startsWith('#')) {
-                        updateRecentlyOpenedFilesList(line)
-                    }
-                });
-                readInterface.on('close', () => {
-                    resolve();
-                    log("recently opened file list loaded");
-                });
+            });
+            readInterface.on('close', () => {
+                log("recently opened file list loaded");
+                resolve();
             });
         });
-    }))
+    })).then(() => undefined);
     return fileListLoadedPromise;
 }
