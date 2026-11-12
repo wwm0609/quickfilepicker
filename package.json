@@ -2,8 +2,9 @@
   "name": "file-searcher",
   "displayName": "Fast File Picker",
   "description": "Searching files on the fly",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publisher": "wwm0609",
+  "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.75.0"
   },
