@@ -1,9 +1,12 @@
 .vscode/**
 out/**/*.map
+out/test/**
 src/**
 .gitignore
 tsconfig.json
-tslint.json
+claude.md
+*.zip
+*.vsix
 file-picker-commands.png
 exclude_dirs.png
 how-to-use-fast-file-picker.gif
